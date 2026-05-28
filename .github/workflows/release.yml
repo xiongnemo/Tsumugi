@@ -138,11 +138,11 @@ jobs:
           LDFLAGS="${LDFLAGS} -X github.com/nemo/Tsumugi/internal/version.branch=${BRANCH}"
           LDFLAGS="${LDFLAGS} -X github.com/nemo/Tsumugi/internal/version.dirty=false"
 
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="${LDFLAGS}" -o "dist/tsumugi.exe" ./cmd/tsumugi
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="${LDFLAGS}" -o "dist/tsumugi.exe" ./cmd/tsumugi
           (cd dist && zip -9 "../out/tsumugi_${RELEASE_VERSION}_windows_amd64.zip" tsumugi.exe)
           rm -f dist/tsumugi.exe
 
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="${LDFLAGS}" -o "dist/tsumugi" ./cmd/tsumugi
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="${LDFLAGS}" -o "dist/tsumugi" ./cmd/tsumugi
           tar -C dist -czf "out/tsumugi_${RELEASE_VERSION}_linux_amd64.tar.gz" tsumugi
           rm -f dist/tsumugi
 
