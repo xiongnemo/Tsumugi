@@ -1,8 +1,9 @@
 # Repository Instructions
 
-This repository is a template for Go terminal applications built with
-`tview`/`tcell`. Keep it friendly to future agents: prefer simple defaults,
-single-file release artifacts, explicit versioning, and testable UI behavior.
+This repository is now Tsumugi, a Telegram TUI client written in Go. It uses
+`gotd/td` as the Telegram MTProto backend and `tview`/`tcell` for the terminal
+UI. Keep it friendly to future agents: prefer simple defaults, single-file
+release artifacts, explicit versioning, and testable UI behavior.
 
 ## Quick Commands
 

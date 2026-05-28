@@ -1,3 +1,5 @@
+# Local secrets used for manual Telegram tests.
+*.secret
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
@@ -16,6 +18,10 @@
 coverage.*
 *.coverprofile
 profile.cov
+
+# Local agent/runtime debug logs
+debug-*.log
+debug-tsumugi.log
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
