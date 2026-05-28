@@ -138,13 +138,39 @@ jobs:
           LDFLAGS="${LDFLAGS} -X github.com/nemo/Tsumugi/internal/version.branch=${BRANCH}"
           LDFLAGS="${LDFLAGS} -X github.com/nemo/Tsumugi/internal/version.dirty=false"
 
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="${LDFLAGS}" -o "dist/tsumugi.exe" ./cmd/tsumugi
-          (cd dist && zip -9 "../out/tsumugi_${RELEASE_VERSION}_windows_amd64.zip" tsumugi.exe)
-          rm -f dist/tsumugi.exe
+          targets=(
+            "windows/amd64"
+            "windows/arm64"
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "freebsd/amd64"
+            "freebsd/arm64"
+            "openbsd/amd64"
+            "openbsd/arm64"
+          )
 
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="${LDFLAGS}" -o "dist/tsumugi" ./cmd/tsumugi
-          tar -C dist -czf "out/tsumugi_${RELEASE_VERSION}_linux_amd64.tar.gz" tsumugi
-          rm -f dist/tsumugi
+          for target in "${targets[@]}"; do
+            IFS=/ read -r goos goarch <<< "${target}"
+            name="tsumugi_${RELEASE_VERSION}_${goos}_${goarch}"
+            rm -rf "dist/${name}"
+            mkdir -p "dist/${name}"
+
+            if [[ "${goos}" == "windows" ]]; then
+              bin="tsumugi.exe"
+            else
+              bin="tsumugi"
+            fi
+
+            CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" go build -trimpath -buildvcs=false -ldflags="${LDFLAGS}" -o "dist/${name}/${bin}" ./cmd/tsumugi
+
+            if [[ "${goos}" == "windows" ]]; then
+              (cd "dist/${name}" && zip -9 "../../out/${name}.zip" "${bin}")
+            else
+              tar -C "dist/${name}" -czf "out/${name}.tar.gz" "${bin}"
+            fi
+          done
 
           (cd out && sha256sum * > "checksums_${RELEASE_VERSION}.txt")
 
