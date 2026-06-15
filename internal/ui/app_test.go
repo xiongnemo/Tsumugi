@@ -2,14 +2,176 @@ package ui
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/nemo/Tsumugi/internal/i18n"
+	"github.com/nemo/Tsumugi/internal/render"
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
+
+func newCaptureTestApp() *App {
+	return &App{
+		app:      tview.NewApplication(),
+		folders:  tview.NewList(),
+		chats:    tview.NewList(),
+		messages: NewMessageViewport(),
+		composer: tview.NewInputField(),
+		theme:    DefaultTheme(),
+	}
+}
+
+func keyEvent(key tcell.Key) *tcell.EventKey {
+	return tcell.NewEventKey(key, 0, tcell.ModNone)
+}
+
+func TestCaptureMainShellTabCyclesFocus(t *testing.T) {
+	app := newCaptureTestApp()
+	app.app.SetFocus(app.chats)
+
+	if got := app.capture(keyEvent(tcell.KeyTAB)); got != nil {
+		t.Fatalf("main shell Tab returned event, want consumed")
+	}
+	if got := app.app.GetFocus(); got != app.messages {
+		t.Fatalf("focus after Tab = %T, want messages", got)
+	}
+}
+
+func TestCapturePassesNavigationKeysToOverlayForms(t *testing.T) {
+	keys := []tcell.Key{tcell.KeyTAB, tcell.KeyLeft, tcell.KeyRight}
+	surfaces := []string{"onboarding", "search", "auth", "proxy", "reactions"}
+
+	for _, surface := range surfaces {
+		t.Run(surface, func(t *testing.T) {
+			app := newCaptureTestApp()
+			form := tview.NewForm().
+				AddInputField("Value", "", 20, nil, nil).
+				AddButton("OK", nil).
+				AddButton("Cancel", nil)
+			app.app.SetFocus(form)
+			focused := app.app.GetFocus()
+
+			for _, key := range keys {
+				event := keyEvent(key)
+				if got := app.capture(event); got != event {
+					t.Fatalf("%s key %v was not passed through", surface, key)
+				}
+				if got := app.app.GetFocus(); got != focused {
+					t.Fatalf("%s key %v changed focus to %T", surface, key, got)
+				}
+			}
+		})
+	}
+}
+
+func TestCapturePassesTabToNonMainOverlayList(t *testing.T) {
+	app := newCaptureTestApp()
+	list := tview.NewList()
+	app.app.SetFocus(list)
+
+	event := keyEvent(tcell.KeyTAB)
+	if got := app.capture(event); got != event {
+		t.Fatal("overlay list Tab was not passed through")
+	}
+	if got := app.app.GetFocus(); got != list {
+		t.Fatalf("overlay list Tab changed focus to %T", got)
+	}
+}
+
+func TestCapturePreservesMessageActionDetailPreviewCycling(t *testing.T) {
+	app := newCaptureTestApp()
+	detail := tview.NewTextView()
+	preview := tview.NewTextView()
+	form := tview.NewForm().AddButton("Cancel", nil)
+	app.msgActionDetail = detail
+	app.msgActionPreview = preview
+	app.msgActionForm = form
+	app.app.SetFocus(detail)
+
+	if got := app.capture(keyEvent(tcell.KeyTAB)); got != nil {
+		t.Fatalf("message action Tab returned event, want consumed")
+	}
+	if got := app.app.GetFocus(); got != preview {
+		t.Fatalf("message action Tab focus = %T, want preview", got)
+	}
+
+	if got := app.capture(keyEvent(tcell.KeyTAB)); got != nil {
+		t.Fatalf("message action second Tab returned event, want consumed")
+	}
+	if !form.HasFocus() {
+		t.Fatalf("message action second Tab focus = %T, want form child", app.app.GetFocus())
+	}
+
+	if got := app.capture(keyEvent(tcell.KeyBacktab)); got != nil {
+		t.Fatalf("message action Backtab returned event, want consumed")
+	}
+	if got := app.app.GetFocus(); got != preview {
+		t.Fatalf("message action Backtab focus = %T, want preview", got)
+	}
+}
+
+func TestCapturePassesNavigationKeysToLogoutModal(t *testing.T) {
+	app := newCaptureTestApp()
+	modal := tview.NewModal().SetText("Log out?").AddButtons([]string{"OK", "Cancel"})
+	app.app.SetFocus(modal)
+	focused := app.app.GetFocus()
+
+	for _, key := range []tcell.Key{tcell.KeyTAB, tcell.KeyLeft, tcell.KeyRight, tcell.KeyEnter} {
+		event := keyEvent(key)
+		if got := app.capture(event); got != event {
+			t.Fatalf("logout modal key %v was not passed through", key)
+		}
+		if got := app.app.GetFocus(); got != focused {
+			t.Fatalf("logout modal key %v changed focus to %T", key, got)
+		}
+	}
+}
+
+func TestCaptureSettingsPassesNavigationKeysToFocusedForm(t *testing.T) {
+	app := newCaptureTestApp()
+	list := tview.NewList()
+	form := tview.NewForm().AddButton("Save", nil).AddButton("Close", nil)
+	app.settingsOverlay = &settingsOverlay{list: list, form: form}
+	app.app.SetFocus(form)
+	focused := app.app.GetFocus()
+
+	for _, key := range []tcell.Key{tcell.KeyTAB, tcell.KeyBacktab, tcell.KeyLeft, tcell.KeyRight} {
+		event := keyEvent(key)
+		if got := app.captureSettings(event); got != event {
+			t.Fatalf("settings form key %v was not passed through", key)
+		}
+		if got := app.app.GetFocus(); got != focused {
+			t.Fatalf("settings form key %v changed focus to %T", key, got)
+		}
+	}
+}
+
+func TestCaptureSettingsCategoryListMovesToForm(t *testing.T) {
+	app := newCaptureTestApp()
+	list := tview.NewList()
+	form := tview.NewForm().AddButton("Save", nil)
+	app.settingsOverlay = &settingsOverlay{list: list, form: form}
+	app.app.SetFocus(list)
+
+	if got := app.captureSettings(keyEvent(tcell.KeyRight)); got != nil {
+		t.Fatalf("settings category Right returned event, want consumed")
+	}
+	if !form.HasFocus() {
+		t.Fatalf("settings category Right focus = %T, want form child", app.app.GetFocus())
+	}
+
+	app.app.SetFocus(list)
+	if got := app.captureSettings(keyEvent(tcell.KeyTAB)); got != nil {
+		t.Fatalf("settings category Tab returned event, want consumed")
+	}
+	if !form.HasFocus() {
+		t.Fatalf("settings category Tab focus = %T, want form child", app.app.GetFocus())
+	}
+}
 
 func TestSelectMessageByIDScrollsToReplyTarget(t *testing.T) {
 	app := &App{
@@ -222,6 +384,88 @@ func TestMessageViewportAppendAtBottomPreservesHighlight(t *testing.T) {
 	}
 }
 
+func TestMessageViewportCapsSetAndAppend(t *testing.T) {
+	v := NewMessageViewport()
+	v.setMessageLimitForTest(5)
+	v.SetRect(0, 0, 40, 8)
+
+	v.SetMessages(viewportTestMessages(0, 7))
+	if got := len(v.Messages()); got != 5 {
+		t.Fatalf("message count after set = %d, want 5", got)
+	}
+	if oldest := v.OldestMessageID(); oldest != "2" {
+		t.Fatalf("oldest after set = %q, want 2", oldest)
+	}
+
+	v.layout(40)
+	if stats := v.Stats(); stats.Blocks != 5 {
+		t.Fatalf("blocks after layout = %d, want 5", stats.Blocks)
+	}
+
+	v.AppendMessage(telegram.Message{ID: "7", Text: "new", CreatedAt: time.Unix(7, 0)})
+	msgs := v.Messages()
+	if got := len(msgs); got != 5 {
+		t.Fatalf("message count after append = %d, want 5", got)
+	}
+	if msgs[0].ID != "3" || msgs[len(msgs)-1].ID != "7" {
+		t.Fatalf("append cap kept IDs %s..%s, want 3..7", msgs[0].ID, msgs[len(msgs)-1].ID)
+	}
+	if stats := v.Stats(); stats.Blocks != 0 {
+		t.Fatalf("stale blocks retained after append: %+v", stats)
+	}
+}
+
+func TestMessageViewportPreserveReplaceKeepsAnchorWithinCap(t *testing.T) {
+	v := NewMessageViewport()
+	v.setMessageLimitForTest(5)
+	v.SetRect(0, 0, 40, 8)
+	v.SetMessages(viewportTestMessages(10, 5))
+	if !v.SelectByID("12") {
+		t.Fatal("expected anchor selectable")
+	}
+
+	v.SetMessagesReplace(viewportTestMessages(0, 15), true)
+	selected, ok := v.SelectedMessage()
+	if !ok || selected.ID != "12" {
+		t.Fatalf("selection after capped replace = %+v ok=%v, want 12", selected, ok)
+	}
+	msgs := v.Messages()
+	if got := len(msgs); got != 5 {
+		t.Fatalf("message count after capped replace = %d, want 5", got)
+	}
+	if msgs[0].ID != "10" || msgs[len(msgs)-1].ID != "14" {
+		t.Fatalf("capped replace kept IDs %s..%s, want 10..14", msgs[0].ID, msgs[len(msgs)-1].ID)
+	}
+}
+
+func TestMessageViewportTrimDropsRasterPreviewPayloads(t *testing.T) {
+	v := NewMessageViewport()
+	v.setMessageLimitForTest(2)
+	v.SetMessages([]telegram.Message{
+		{ID: "1", CreatedAt: time.Unix(1, 0), Media: telegram.MediaAttachment{PreviewText: strings.Repeat("x", 1024)}},
+		{ID: "2", CreatedAt: time.Unix(2, 0)},
+		{ID: "3", CreatedAt: time.Unix(3, 0)},
+	})
+	for _, msg := range v.Messages() {
+		if msg.ID == "1" || msg.Media.PreviewText != "" {
+			t.Fatalf("trimmed preview payload retained in viewport: %+v", msg)
+		}
+	}
+}
+
+func viewportTestMessages(start, count int) []telegram.Message {
+	messages := make([]telegram.Message, 0, count)
+	for i := 0; i < count; i++ {
+		id := strconv.Itoa(start + i)
+		messages = append(messages, telegram.Message{
+			ID:        id,
+			Text:      "line",
+			CreatedAt: time.Unix(int64(start+i), 0),
+		})
+	}
+	return messages
+}
+
 func TestFolderRulesMatchTelegramFiltersAndArchive(t *testing.T) {
 	work := telegram.Folder{
 		ID:    2,
@@ -309,6 +553,53 @@ func TestRefreshChatsRestoresHighlightByPeerID(t *testing.T) {
 	app.refreshChats()
 	if idx := app.chats.GetCurrentItem(); idx != 1 {
 		t.Fatalf("chat list index = %d, want 1 (user:2)", idx)
+	}
+}
+
+func TestChatListRowWidthUsesInnerRectWithSafetyMargin(t *testing.T) {
+	chats := tview.NewList()
+	chats.SetBorder(true)
+	chats.SetRect(0, 0, 34, 8)
+	app := &App{chats: chats}
+
+	if got := app.chatListRowWidth(); got != 31 {
+		t.Fatalf("chat list row width = %d, want 31", got)
+	}
+}
+
+func TestChatListRowWidthFallsBackBeforeDraw(t *testing.T) {
+	app := &App{chats: tview.NewList()}
+
+	if got := app.chatListRowWidth(); got != 31 {
+		t.Fatalf("fallback chat list row width = %d, want 31", got)
+	}
+}
+
+func TestRefreshChatsFitsRowsToChatListWidth(t *testing.T) {
+	chats := tview.NewList().ShowSecondaryText(true)
+	chats.SetBorder(true)
+	chats.SetRect(0, 0, 20, 8)
+	app := &App{
+		chats:         chats,
+		currentFolder: 0,
+		allChats: []telegram.Chat{
+			{
+				ID:          "chat:1",
+				Title:       "聊天群組😊聊天群組😊聊天群組",
+				Subtitle:    "群組副標題😊群組副標題😊",
+				LastPreview: "最新訊息內容😊最新訊息內容",
+			},
+		},
+	}
+
+	app.refreshChats()
+	main, secondary := app.chats.GetItemText(0)
+	rowWidth := app.chatListRowWidth()
+	if render.StringWidth(main) > rowWidth {
+		t.Fatalf("main row width = %d, want <= %d: %q", render.StringWidth(main), rowWidth, main)
+	}
+	if render.StringWidth(secondary) > rowWidth {
+		t.Fatalf("secondary row width = %d, want <= %d: %q", render.StringWidth(secondary), rowWidth, secondary)
 	}
 }
 

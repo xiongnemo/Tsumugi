@@ -68,6 +68,28 @@ func TestSavePeersAndMessages(t *testing.T) {
 	}
 }
 
+func TestSecretSettingsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+
+	if err := db.SetSecretSetting(ctx, "telegram.api_hash", "secret-hash"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := db.GetSecretSetting(ctx, "telegram.api_hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got != "secret-hash" {
+		t.Fatalf("secret setting = %q ok=%v", got, ok)
+	}
+	if err := db.DeleteSettings(ctx, "telegram.api_hash"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := db.GetSecretSetting(ctx, "telegram.api_hash"); err != nil || ok {
+		t.Fatalf("deleted secret setting ok=%v err=%v", ok, err)
+	}
+}
+
 func TestMessageByID(t *testing.T) {
 	ctx := context.Background()
 	db := testDB(t)

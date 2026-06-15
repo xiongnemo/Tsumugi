@@ -61,6 +61,10 @@ func (a *App) showSettings() {
 	}
 
 	list.AddItem(i18n.T(i18n.KeySettingsGeneral), i18n.T(i18n.KeySettingsGeneralDesc), 0, openGeneral)
+	list.AddItem(i18n.T(i18n.KeySettingsAccount), i18n.T(i18n.KeySettingsAccountDesc), 0, func() {
+		form := a.settingsAccountForm(overlay)
+		showSection(i18n.T(i18n.KeySettingsAccount), form, form, true)
+	})
 	list.AddItem(i18n.T(i18n.KeySettingsNetwork), i18n.T(i18n.KeySettingsNetworkDesc), 0, func() {
 		a.settingsOverlay = nil
 		a.showProxySettings()
@@ -133,6 +137,20 @@ func (a *App) settingsGeneralForm(overlay *settingsOverlay) *tview.Form {
 	return form
 }
 
+func (a *App) settingsAccountForm(overlay *settingsOverlay) *tview.Form {
+	_ = overlay
+	form := tview.NewForm().
+		AddTextView(i18n.T(i18n.KeySettingsAccountMode), string(a.cfg.AuthMode), 40, 1, false, false).
+		AddTextView(i18n.T(i18n.KeySettingsAccountCache), i18n.T(i18n.KeyLogoutKeepsCache), 48, 3, true, false).
+		AddButton(i18n.T(i18n.KeyLogoutButton), func() {
+			a.showLogoutConfirm()
+		}).
+		AddButton(i18n.T(i18n.KeySettingsClose), func() {
+			a.closeSettings()
+		})
+	return form
+}
+
 func (a *App) refreshSettingsUI(overlay *settingsOverlay) {
 	if overlay == nil || overlay.list == nil {
 		return
@@ -144,6 +162,14 @@ func (a *App) refreshSettingsUI(overlay *settingsOverlay) {
 		overlay.content.Clear()
 		overlay.form = form
 		form.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeySettingsGeneral) + " ")
+		overlay.content.AddItem(form, 0, 1, true)
+		a.app.SetFocus(form)
+	})
+	overlay.list.AddItem(i18n.T(i18n.KeySettingsAccount), i18n.T(i18n.KeySettingsAccountDesc), 0, func() {
+		form := a.settingsAccountForm(overlay)
+		overlay.content.Clear()
+		overlay.form = form
+		form.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeySettingsAccount) + " ")
 		overlay.content.AddItem(form, 0, 1, true)
 		a.app.SetFocus(form)
 	})
@@ -178,6 +204,49 @@ func (a *App) closeSettings() {
 	a.updateFocusStyle()
 }
 
+func (a *App) showLogoutConfirm() {
+	a.settingsOverlay = nil
+	modal := tview.NewModal().
+		SetText(i18n.T(i18n.KeyLogoutConfirmBody)).
+		AddButtons([]string{i18n.T(i18n.KeyLogoutConfirm), i18n.T(i18n.KeyActionCancel)}).
+		SetDoneFunc(func(_ int, label string) {
+			if label != i18n.T(i18n.KeyLogoutConfirm) {
+				a.app.SetRoot(a.root, true)
+				a.app.SetFocus(a.chats)
+				a.updateFocusStyle()
+				return
+			}
+			a.requestLogout()
+		})
+	a.app.SetRoot(modal, true)
+	a.app.SetFocus(modal)
+}
+
+func (a *App) requestLogout() {
+	reply := make(chan error, 1)
+	if a.control != nil {
+		a.control <- ControlEvent{Kind: ControlLogout, Reply: reply}
+	} else {
+		reply <- nil
+	}
+	a.setStatusMsg(i18n.KeyLogoutStatusRunning)
+	go func() {
+		err := <-reply
+		a.app.QueueUpdateDraw(func() {
+			if err != nil {
+				a.app.SetRoot(a.root, true)
+				a.app.SetFocus(a.chats)
+				a.setStatusError(err)
+				return
+			}
+			a.cfg = a.cfg.WithoutTelegramAuth()
+			a.resetTelegramView(i18n.T(i18n.KeyLogoutStatusDone))
+			a.showOnboarding()
+			a.setStatusMsg(i18n.KeyLogoutStatusDone)
+		})
+	}()
+}
+
 func (a *App) captureSettings(event *tcell.EventKey) *tcell.EventKey {
 	if a.settingsOverlay == nil {
 		return event
@@ -198,20 +267,9 @@ func (a *App) captureSettings(event *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 		return event
-	case tcell.KeyBacktab:
-		if focus == overlay.form {
-			a.app.SetFocus(overlay.list)
-			return nil
-		}
-		return event
 	case tcell.KeyRight:
 		if focus == overlay.list && overlay.form != nil {
 			a.app.SetFocus(overlay.form)
-			return nil
-		}
-	case tcell.KeyLeft:
-		if focus == overlay.form {
-			a.app.SetFocus(overlay.list)
 			return nil
 		}
 	}

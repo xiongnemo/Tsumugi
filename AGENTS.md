@@ -63,6 +63,14 @@ Treat keyboard, mouse, resize, and focus behavior as part of the product
 contract. When enabling mouse or focus events, handle resize synchronization
 and document visible keybindings/mouse behavior in `README.md`.
 
+Remember that `Application.SetInputCapture` runs globally before the focused
+primitive handles an event. Global or overlay captures must not steal
+primitive-native navigation keys such as `Tab`, `Backtab`, `Left`, `Right`,
+`Enter`, or list/dropdown movement keys from forms, modals, dropdowns, or
+overlay lists. The focused child owns native navigation; parent captures should
+handle only overlay-level exits such as `Esc`/`Ctrl+C`, unless the overlay is
+deliberately implementing custom focus cycling.
+
 Keep rendering helpers pure where practical. Formatting rows, truncation,
 column-width calculations, footer text, key encoding, and state transitions
 should be testable without opening a real terminal.

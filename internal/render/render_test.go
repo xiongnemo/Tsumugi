@@ -347,3 +347,20 @@ func TestChatRowMarksPinned(t *testing.T) {
 		t.Fatalf("ChatRow() = %q, want pinned prefix", got)
 	}
 }
+
+func TestChatRowUsesDisplayWidthForCJKEmoji(t *testing.T) {
+	got := ChatRow(telegram.Chat{
+		Title:       "聊天群組😊聊天群組😊",
+		Subtitle:    "群組副標題",
+		LastPreview: "最新訊息😊最新訊息",
+	}, 16)
+	if width := StringWidth(got); width > 16 {
+		t.Fatalf("ChatRow width = %d, want <= 16: %q", width, got)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Fatalf("ChatRow should be truncated with ellipsis: %q", got)
+	}
+	if strings.ContainsRune(got, '\uFFFD') {
+		t.Fatalf("ChatRow contains replacement rune: %q", got)
+	}
+}

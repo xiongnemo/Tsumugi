@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -869,6 +870,14 @@ func (db *DB) SetSetting(ctx context.Context, key, value string) error {
 	return err
 }
 
+func (db *DB) SetSecretSetting(ctx context.Context, key, value string) error {
+	sealed, err := db.seal("settings", key, "value", []byte(value))
+	if err != nil {
+		return err
+	}
+	return db.SetSetting(ctx, key, base64.StdEncoding.EncodeToString(sealed))
+}
+
 func (db *DB) GetSetting(ctx context.Context, key string) (string, bool, error) {
 	var value string
 	err := db.sql.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
@@ -879,6 +888,31 @@ func (db *DB) GetSetting(ctx context.Context, key string) (string, bool, error) 
 		return "", false, err
 	}
 	return value, true, nil
+}
+
+func (db *DB) GetSecretSetting(ctx context.Context, key string) (string, bool, error) {
+	value, ok, err := db.GetSetting(ctx, key)
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	sealed, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return "", false, err
+	}
+	opened, err := db.open("settings", key, "value", sealed)
+	if err != nil {
+		return "", false, err
+	}
+	return string(opened), true, nil
+}
+
+func (db *DB) DeleteSettings(ctx context.Context, keys ...string) error {
+	for _, key := range keys {
+		if _, err := db.sql.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (db *DB) seal(table, rowID, field string, plaintext []byte) ([]byte, error) {

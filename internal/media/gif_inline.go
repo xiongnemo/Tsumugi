@@ -6,7 +6,6 @@ import (
 	"image/gif"
 	"os"
 	"strings"
-	"sync"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -16,12 +15,11 @@ type gifDecoded struct {
 }
 
 var (
-	gifPathCache sync.Map
 	gifDecodeGrp singleflight.Group
 )
 
 func gifFramesCached(path string) (*gifDecoded, bool) {
-	v, ok := gifPathCache.Load(path)
+	v, ok := inlineAnimFrames.get(animCacheKey("gif", path))
 	if !ok {
 		return nil, false
 	}
@@ -70,7 +68,7 @@ func decodeGIFAllFrames(path string) (*gifDecoded, error) {
 		return nil, fmt.Errorf("gif: no frames in %s", path)
 	}
 	d := &gifDecoded{frames: frames}
-	gifPathCache.Store(path, d)
+	inlineAnimFrames.add(animCacheKey("gif", path), d, estimateFrameBytes(frames))
 	return d, nil
 }
 

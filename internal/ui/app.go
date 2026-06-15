@@ -73,9 +73,11 @@ type App struct {
 	settingsOverlay  *settingsOverlay
 	lastChatRefresh  time.Time
 	gapFillQueued    map[string]struct{}
+	control          chan<- ControlEvent
+	onboardingActive bool
 }
 
-func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command) *App {
+func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
 	theme := DefaultTheme()
 	ApplyTheme(theme)
 
@@ -84,6 +86,7 @@ func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, comman
 		db:       db,
 		events:   events,
 		commands: commands,
+		control:  control,
 		settings: settings.Load(context.Background(), db),
 		app:      tview.NewApplication(),
 		folders: tview.NewList().
@@ -110,12 +113,16 @@ func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, comman
 }
 
 func (a *App) Run(ctx context.Context) error {
+	if a.cfg.NeedsOnboarding() {
+		a.showOnboarding()
+	}
 	go a.consumeEvents(ctx)
 	go func() {
 		<-ctx.Done()
 		a.app.Stop()
 	}()
 	go a.runInlineAnimTicker(ctx)
+	go a.runMemoryDiagnostics(ctx)
 	return a.app.Run()
 }
 
@@ -217,6 +224,9 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		return a.captureSettings(event)
 	}
 	focus := a.app.GetFocus()
+	if a.focusedOverlayPrimitiveOwnsNavigation(focus, event) {
+		return event
+	}
 	switch event.Key() {
 	case tcell.KeyCtrlC:
 		a.app.Stop()
@@ -263,16 +273,16 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 	case tcell.KeyBacktab:
 		if a.msgActionForm != nil {
 			f := a.app.GetFocus()
-			switch f {
-			case a.msgActionForm:
+			switch {
+			case a.msgActionForm.HasFocus():
 				if a.msgActionPreview != nil {
 					a.app.SetFocus(a.msgActionPreview)
 				} else {
 					a.app.SetFocus(a.msgActionDetail)
 				}
-			case a.msgActionPreview:
+			case f == a.msgActionPreview:
 				a.app.SetFocus(a.msgActionDetail)
-			case a.msgActionDetail:
+			case f == a.msgActionDetail:
 				a.app.SetFocus(a.msgActionForm)
 			default:
 				return event
@@ -374,6 +384,39 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 	return event
+}
+
+func (a *App) focusedOverlayPrimitiveOwnsNavigation(focus tview.Primitive, event *tcell.EventKey) bool {
+	if !nativeNavigationKey(event) || a.isMainShellFocus(focus) {
+		return false
+	}
+	if a.msgActionForm != nil {
+		if focus == a.msgActionDetail || focus == a.msgActionPreview {
+			return false
+		}
+		if a.msgActionForm.HasFocus() && event.Key() == tcell.KeyBacktab {
+			return false
+		}
+	}
+	switch focus.(type) {
+	case *tview.Form, *tview.InputField, *tview.DropDown, *tview.Checkbox, *tview.Button, *tview.List, *tview.Modal, *tview.TextView:
+		return true
+	default:
+		return false
+	}
+}
+
+func nativeNavigationKey(event *tcell.EventKey) bool {
+	switch event.Key() {
+	case tcell.KeyTAB, tcell.KeyBacktab, tcell.KeyLeft, tcell.KeyRight, tcell.KeyEnter, tcell.KeyUp, tcell.KeyDown:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *App) isMainShellFocus(focus tview.Primitive) bool {
+	return focus == a.folders || focus == a.chats || focus == a.messages || focus == a.composer
 }
 
 func (a *App) consumeEvents(ctx context.Context) {
@@ -522,6 +565,32 @@ func chatIndexByID(chats []telegram.Chat, id string) int {
 	return -1
 }
 
+const (
+	defaultChatListInnerWidth    = 32
+	chatListRightEdgeSafetyCells = 1
+	// New tview boxes start at 15x10 before layout; use the chat column fallback until Draw sets the real rect.
+	tviewDefaultBoxWidth  = 15
+	tviewDefaultBoxHeight = 10
+)
+
+func (a *App) chatListRowWidth() int {
+	width := defaultChatListInnerWidth
+	if a != nil && a.chats != nil {
+		_, _, outerWidth, outerHeight := a.chats.GetRect()
+		_, _, innerWidth, _ := a.chats.GetInnerRect()
+		if innerWidth > 0 && (outerWidth != tviewDefaultBoxWidth || outerHeight != tviewDefaultBoxHeight) {
+			width = innerWidth
+		}
+	}
+	if width > chatListRightEdgeSafetyCells {
+		width -= chatListRightEdgeSafetyCells
+	}
+	if width < 1 {
+		return 1
+	}
+	return width
+}
+
 func (a *App) refreshChats() {
 	visible := a.visibleChatsForFolder()
 	prevVisibleIdx := -1
@@ -532,11 +601,12 @@ func (a *App) refreshChats() {
 	defer func() { a.chatsListRestoring = false }()
 
 	a.chats.Clear()
+	rowWidth := a.chatListRowWidth()
 	for _, chat := range visible {
 		display := localizedChatDisplay(chat)
 		peerID := chat.ID
 		title := chat.Title
-		a.chats.AddItem(render.ChatRow(display, 80), display.Subtitle, 0, func() {
+		a.chats.AddItem(render.ChatRow(display, rowWidth), render.Truncate(display.Subtitle, rowWidth), 0, func() {
 			a.currentChat = peerID
 			a.resetGapFillQueue()
 			a.currentTitle = title
@@ -1105,6 +1175,7 @@ func (a *App) runMessageAction(action string, msg telegram.Message) {
 }
 
 func (a *App) setReplyTarget(msg telegram.Message) {
+	msg.Media.PreviewText = ""
 	a.replyTarget = &msg
 	label := strings.TrimSpace(msg.Text)
 	if label == "" {
@@ -1187,7 +1258,7 @@ func (a *App) showSearch() {
 		AddItem(panel, 58, 0, true).
 		AddItem(tview.NewBox(), 0, 1, false)
 	a.app.SetRoot(centered, true)
-	a.app.SetFocus(input)
+	a.app.SetFocus(form)
 }
 
 func (a *App) applySearch(scope, query string) {
@@ -1397,7 +1468,7 @@ func (a *App) showAuthPrompt(prompt *telegram.AuthPrompt) {
 		AddItem(tview.NewBox(), 0, 1, false)
 
 	a.app.SetRoot(centered, true)
-	a.app.SetFocus(input)
+	a.app.SetFocus(form)
 }
 
 func (a *App) submitAuthPrompt(prompt *telegram.AuthPrompt, value string) {

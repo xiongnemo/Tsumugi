@@ -7,7 +7,7 @@ import (
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
 
-func TestStoreAppliesChatsAndMessages(t *testing.T) {
+func TestStoreAppliesChatsWithoutRetainingMessages(t *testing.T) {
 	store := NewStore()
 	store.Apply(telegram.Event{
 		StatusMsg: i18n.M(i18n.KeyStatusConnectedAs, "test"),
@@ -28,7 +28,7 @@ func TestStoreAppliesChatsAndMessages(t *testing.T) {
 	if len(snapshot.Chats) != 2 || snapshot.Chats[0].ID != "a" {
 		t.Fatalf("unexpected chats: %+v", snapshot.Chats)
 	}
-	if len(snapshot.Messages["a"]) != 1 {
-		t.Fatalf("unexpected messages: %+v", snapshot.Messages)
+	if len(snapshot.Messages) != 0 {
+		t.Fatalf("store should not retain event messages, got %+v", snapshot.Messages)
 	}
 }

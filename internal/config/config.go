@@ -44,14 +44,19 @@ const (
 )
 
 type Config struct {
-	AuthMode AuthMode
-	SyncMode SyncMode
-	APIID    int
-	APIHash  string
-	BotToken string
-	Phone    string
-	Proxy    network.ProxyConfig
-	Paths    Paths
+	AuthMode        AuthMode
+	SyncMode        SyncMode
+	APIID           int
+	APIHash         string
+	BotToken        string
+	Phone           string
+	Proxy           network.ProxyConfig
+	Paths           Paths
+	AuthModeFromEnv bool
+	APIIDFromEnv    bool
+	APIHashFromEnv  bool
+	BotTokenFromEnv bool
+	PhoneFromEnv    bool
 }
 
 func Load(flags CLIFlags) (Config, error) {
@@ -64,14 +69,22 @@ func Load(flags CLIFlags) (Config, error) {
 		return Config{}, err
 	}
 
+	envAPIHash := firstString(os.Getenv("TSUMUGI_API_HASH"), os.Getenv("API_HASH"))
+	envBotToken := os.Getenv("TSUMUGI_BOT_TOKEN")
+	envPhone := firstString(os.Getenv("TSUMUGI_PHONE"), os.Getenv("TG_PHONE"))
+
 	cfg := Config{
-		AuthMode: AuthUser,
-		SyncMode: SyncLazy,
-		APIID:    firstInt(flags.APIID, envAPIID),
-		APIHash:  firstString(flags.APIHash, os.Getenv("TSUMUGI_API_HASH"), os.Getenv("API_HASH")),
-		BotToken: firstString(flags.BotToken, os.Getenv("TSUMUGI_BOT_TOKEN")),
-		Phone:    firstString(flags.Phone, os.Getenv("TSUMUGI_PHONE"), os.Getenv("TG_PHONE")),
-		Paths:    paths,
+		AuthMode:        AuthUser,
+		SyncMode:        SyncLazy,
+		APIID:           firstInt(flags.APIID, envAPIID),
+		APIHash:         firstString(flags.APIHash, envAPIHash),
+		BotToken:        firstString(flags.BotToken, envBotToken),
+		Phone:           firstString(flags.Phone, envPhone),
+		Paths:           paths,
+		APIIDFromEnv:    flags.APIID != 0 || envAPIID != 0,
+		APIHashFromEnv:  strings.TrimSpace(flags.APIHash) != "" || envAPIHash != "",
+		BotTokenFromEnv: strings.TrimSpace(flags.BotToken) != "" || strings.TrimSpace(envBotToken) != "",
+		PhoneFromEnv:    strings.TrimSpace(flags.Phone) != "" || envPhone != "",
 	}
 
 	mode := firstString(flags.AuthMode, os.Getenv("TSUMUGI_AUTH_MODE"))
@@ -81,9 +94,11 @@ func Load(flags CLIFlags) (Config, error) {
 			return Config{}, err
 		}
 		cfg.AuthMode = parsed
+		cfg.AuthModeFromEnv = true
 	}
 	if cfg.AuthMode == AuthBot && cfg.BotToken == "" {
 		cfg.BotToken = os.Getenv("BOT_TOKEN")
+		cfg.BotTokenFromEnv = strings.TrimSpace(cfg.BotToken) != ""
 	}
 
 	syncMode := firstString(os.Getenv("TSUMUGI_SYNC_MODE"))
@@ -123,7 +138,31 @@ func (c Config) ReadyForTelegram() bool {
 	if c.AuthMode == AuthBot {
 		return c.BotToken != ""
 	}
-	return c.Phone != ""
+	return true
+}
+
+func (c Config) NeedsOnboarding() bool {
+	if c.APIID == 0 || c.APIHash == "" {
+		return true
+	}
+	if c.AuthMode == AuthBot {
+		return c.BotToken == ""
+	}
+	return c.Phone == ""
+}
+
+func (c Config) WithoutTelegramAuth() Config {
+	c.AuthMode = AuthUser
+	c.APIID = 0
+	c.APIHash = ""
+	c.BotToken = ""
+	c.Phone = ""
+	c.AuthModeFromEnv = false
+	c.APIIDFromEnv = false
+	c.APIHashFromEnv = false
+	c.BotTokenFromEnv = false
+	c.PhoneFromEnv = false
+	return c
 }
 
 func (c Config) EnsureDirs() error {

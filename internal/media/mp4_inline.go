@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -21,7 +20,6 @@ type videoDecoded struct {
 }
 
 var (
-	videoPathCache sync.Map
 	videoDecodeGrp singleflight.Group
 )
 
@@ -40,7 +38,7 @@ func VideoPathMayAnimate(path string) bool {
 }
 
 func videoFramesCached(path string) (*videoDecoded, bool) {
-	v, ok := videoPathCache.Load(path)
+	v, ok := inlineAnimFrames.get(animCacheKey("video", path))
 	if !ok {
 		return nil, false
 	}
@@ -125,7 +123,7 @@ func decodeVideoFrames(path string) (*videoDecoded, error) {
 		return nil, fmt.Errorf("video: no frames in %s", path)
 	}
 	d := &videoDecoded{frames: frames}
-	videoPathCache.Store(path, d)
+	inlineAnimFrames.add(animCacheKey("video", path), d, estimateFrameBytes(frames))
 	return d, nil
 }
 

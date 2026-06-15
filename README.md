@@ -19,6 +19,8 @@ share the same Telegram API adapter after authentication.
   set `TSUMUGI_PASSPHRASE` so a key can be derived with Argon2id.
 - TUI shell with folder rail, chat list, selectable message pane, composer,
   status/footer, keybindings, a settings hub, and a proxy settings modal.
+- First-run onboarding wizard for language, Telegram login mode, API
+  credentials, and phone/bot token setup when credentials are incomplete.
 - Proxy support for SOCKS5, HTTP CONNECT, and Telegram MTProxy.
 - Proxy profile management in the TUI. Environment proxy entries are shown as
   read-only profiles so you can tell when connectivity comes from environment
@@ -45,8 +47,9 @@ JPEG, GIF, WebP). Video containers are not decoded inline in the terminal.
 Enable **inline GIF animation** in Settings (`?` → General) to animate cached
 GIF/MP4/WebM previews in the message list (Telegram GIFs and video stickers).
 MP4 and WebM decoding uses **ffmpeg** in your `PATH`. This redraws periodically
-and can use more CPU on busy chats. You can also set `TSUMUGI_INLINE_ANIM=1` before first launch when
-the setting is not yet stored in SQLite.
+and can use more CPU on busy chats. Decoded animation frames are kept in a shared
+96 MB in-memory LRU cache. You can also set `TSUMUGI_INLINE_ANIM=1` before first
+launch when the setting is not yet stored in SQLite.
 
 Media-only messages (polls, contacts, locations, and other attachment types) show
 localized placeholders in the chat list and message view instead of `(empty message)`.
@@ -56,11 +59,19 @@ localized placeholders in the chat list and message view instead of `(empty mess
 Press **`?`** to open the settings hub. The first release includes:
 
 - **General**: interface language (`en` / `zh`), inline GIF animation, and outgoing message layout (`transcript` / `im`)
+- **Account**: current login mode and local Telegram logout
 - **Network**: proxy profile management (same UI as **`P`**)
 
 Settings are stored in the local SQLite `settings` table and apply immediately
-for locale and inline animation. Proxy changes still require reconnecting when
-the active profile changes.
+for locale and inline animation. Telegram credentials collected by onboarding
+are stored locally, with secrets protected by the same application-layer
+encryption used for message content. Proxy changes still require reconnecting
+when the active profile changes.
+
+The **Account** page includes a non-destructive Telegram logout. Logout clears
+only the saved Telegram login credentials and local Telegram session files, then
+returns to onboarding/login. Local SQLite history, media cache, settings, and
+proxy profiles are kept.
 
 Translations live in `internal/i18n/locales/` (`en.json`, `zh.json`). Contributors
 can add or update strings in those JSON files without changing Go code; run
@@ -78,14 +89,17 @@ $env:TSUMUGI_OUTGOING_LAYOUT = 'im'
 
 In the message pane, press **`L`** to toggle outgoing layout (`transcript` = left-aligned with `>` prefix, `im` = incoming left / outgoing right). Press **`R`** on a selected message to view reactions and send a quick emoji (keys `1`–`8`). Broadcast channel posts show view counts (👁) instead of private-chat read receipts.
 
-Telegram API credentials, phone numbers, tokens, and the database passphrase
-remain env/CLI-only and are not exposed in the settings UI.
+Telegram API credentials, phone numbers, and bot tokens can be entered in the
+first-run onboarding wizard or supplied through env/CLI. The database passphrase
+remains env/prompt-only and is not exposed in the settings UI.
 
 ## Configuration
 
-Create Telegram API credentials at <https://my.telegram.org/apps>.
+Create Telegram API credentials at <https://my.telegram.org/apps>. If required
+Telegram credentials are missing, Tsumugi opens an onboarding wizard in the TUI
+and delays the Telegram connection until setup is complete.
 
-Common environment variables:
+Common environment variables still work and override saved onboarding values:
 
 ```pwsh
 $env:TSUMUGI_API_ID = '123456'
@@ -99,6 +113,13 @@ passphrase before starting the TUI. You can also provide it ahead of time:
 
 ```pwsh
 $env:TSUMUGI_PASSPHRASE = 'choose-a-long-local-passphrase'
+```
+
+Memory diagnostics are opt-in and write to stderr:
+
+```pwsh
+$env:TSUMUGI_DEBUG_MEM = '1'       # periodic MemStats, viewport, cache, and gap-fill counts
+$env:TSUMUGI_PPROF_ADDR = ':6060'  # enable net/http/pprof on this address
 ```
 
 For bot mode:

@@ -14,15 +14,18 @@ import (
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
 
+const defaultMessageViewportLimit = 1000
+
 type MessageViewport struct {
 	*tview.Box
 
-	rows      map[string]telegram.Message
-	messages  []telegram.Message
-	blocks    []messageBlock
-	selected  int
-	scroll    int
-	followEnd bool
+	rows         map[string]telegram.Message
+	messages     []telegram.Message
+	blocks       []messageBlock
+	selected     int
+	scroll       int
+	followEnd    bool
+	messageLimit int
 	// pendingBelow counts messages appended while the viewport was not scrolled to the bottom.
 	pendingBelow             int
 	placeholder              string
@@ -49,11 +52,19 @@ type messageBlock struct {
 	alignRight bool
 }
 
+type MessageViewportStats struct {
+	Messages      int
+	Blocks        int
+	RenderedLines int
+	Limit         int
+}
+
 func NewMessageViewport() *MessageViewport {
 	return &MessageViewport{
-		Box:      tview.NewBox(),
-		rows:     make(map[string]telegram.Message),
-		selected: -1,
+		Box:          tview.NewBox(),
+		rows:         make(map[string]telegram.Message),
+		selected:     -1,
+		messageLimit: defaultMessageViewportLimit,
 	}
 }
 
@@ -95,6 +106,12 @@ func (v *MessageViewport) LayoutWidthForBuild() int {
 }
 
 func (v *MessageViewport) ApplyPrebuiltLayout(blocks []messageBlock, width int, mode render.LayoutMode) {
+	if len(blocks) != len(v.messages) {
+		v.invalidateLayout()
+		v.layoutRelayoutBusy = false
+		v.skipInlineAnimNextLayout = false
+		return
+	}
 	v.blocks = blocks
 	v.layoutMode = mode
 	v.layoutWidth = width
@@ -153,7 +170,34 @@ func (v *MessageViewport) SetGroupReadMarks(enabled bool) {
 }
 
 func (v *MessageViewport) invalidateLayout() {
+	v.blocks = nil
 	v.layoutDirty = true
+}
+
+func (v *MessageViewport) messageCap() int {
+	if v.messageLimit <= 0 {
+		return defaultMessageViewportLimit
+	}
+	return v.messageLimit
+}
+
+func (v *MessageViewport) setMessageLimitForTest(limit int) {
+	v.messageLimit = limit
+	v.rebuild(v.selectedID())
+	v.invalidateLayout()
+}
+
+func (v *MessageViewport) Stats() MessageViewportStats {
+	lines := 0
+	for _, block := range v.blocks {
+		lines += len(block.lines)
+	}
+	return MessageViewportStats{
+		Messages:      len(v.messages),
+		Blocks:        len(v.blocks),
+		RenderedLines: lines,
+		Limit:         v.messageCap(),
+	}
 }
 
 func (v *MessageViewport) PatchMessages(updates []telegram.Message) bool {
@@ -685,7 +729,7 @@ func (v *MessageViewport) layout(width int) {
 func (v *MessageViewport) doFullLayout(width int) {
 	skipInlineAnim := v.skipInlineAnimNextLayout
 	v.skipInlineAnimNextLayout = false
-	v.blocks = v.blocks[:0]
+	v.blocks = make([]messageBlock, 0, len(v.messages))
 	offset := 0
 	gutter := 2
 	contentWidth := maxInt(1, width-gutter)
@@ -793,6 +837,7 @@ func (v *MessageViewport) rebuild(selectedID string) {
 		}
 		return v.messages[i].CreatedAt.Before(v.messages[j].CreatedAt)
 	})
+	v.trimMessagesToCap(selectedID)
 	v.selected = -1
 	if selectedID != "" {
 		for i, message := range v.messages {
@@ -805,6 +850,40 @@ func (v *MessageViewport) rebuild(selectedID string) {
 	if v.selected < 0 && len(v.messages) > 0 {
 		v.selected = len(v.messages) - 1
 	}
+}
+
+func (v *MessageViewport) trimMessagesToCap(anchorID string) {
+	limit := v.messageCap()
+	if limit <= 0 || len(v.messages) <= limit {
+		return
+	}
+	start := len(v.messages) - limit
+	if anchorID != "" {
+		if anchorIdx := messageIndexByID(v.messages, anchorID); anchorIdx >= 0 {
+			start = anchorIdx - limit/2
+			if start < 0 {
+				start = 0
+			}
+			if maxStart := len(v.messages) - limit; start > maxStart {
+				start = maxStart
+			}
+		}
+	}
+	kept := append([]telegram.Message(nil), v.messages[start:start+limit]...)
+	v.messages = kept
+	v.rows = make(map[string]telegram.Message, len(kept))
+	for _, message := range kept {
+		v.rows[message.ID] = message
+	}
+}
+
+func messageIndexByID(messages []telegram.Message, id string) int {
+	for i, message := range messages {
+		if message.ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 func (v *MessageViewport) selectedID() string {
