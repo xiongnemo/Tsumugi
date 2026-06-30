@@ -22,7 +22,6 @@ import (
 	"github.com/gotd/td/tgerr"
 
 	"github.com/nemo/Tsumugi/internal/config"
-	"github.com/nemo/Tsumugi/internal/debuglog"
 	"github.com/nemo/Tsumugi/internal/i18n"
 	termmedia "github.com/nemo/Tsumugi/internal/media"
 	"github.com/nemo/Tsumugi/internal/storage"
@@ -55,6 +54,10 @@ type GotdClient struct {
 	groupReadMu          sync.Mutex
 	groupReadCounts      map[string]map[int]int
 	groupReadUnsupported map[string]struct{}
+	suggestMu            sync.Mutex
+	mentionCache         map[string]mentionCacheEntry
+	commandCache         map[string]commandCacheEntry
+	inlineCache          map[string]inlineCacheEntry
 }
 
 type pendingMessage struct {
@@ -71,6 +74,9 @@ func NewGotdClient(cfg config.Config, store *storage.DB) *GotdClient {
 		olderLoading:         make(map[string]struct{}),
 		groupReadCounts:      make(map[string]map[int]int),
 		groupReadUnsupported: make(map[string]struct{}),
+		mentionCache:         make(map[string]mentionCacheEntry),
+		commandCache:         make(map[string]commandCacheEntry),
+		inlineCache:          make(map[string]inlineCacheEntry),
 	}
 }
 
@@ -211,6 +217,11 @@ func (c *GotdClient) loadDialogs(ctx context.Context, accountID string, api *tg.
 		})
 	}
 	if c.store != nil && len(peers) > 0 {
+		for i := range peers {
+			if existing, ok, err := c.store.Peer(ctx, accountID, peers[i].Key); err == nil && ok {
+				peers[i] = mergePeerActivity(existing, peers[i])
+			}
+		}
 		if err := c.store.SavePeers(ctx, peers); err != nil {
 			sendEvent(ctx, events, Event{Kind: EventError, Error: fmt.Errorf("save peers: %w", err)})
 		}
@@ -417,6 +428,11 @@ func (c *GotdClient) syncDialogPages(ctx context.Context, accountID string, api 
 			return allPeers
 		}
 		if len(pagePeers) > 0 {
+			for i := range pagePeers {
+				if existing, ok, err := c.store.Peer(ctx, accountID, pagePeers[i].Key); err == nil && ok {
+					pagePeers[i] = mergePeerActivity(existing, pagePeers[i])
+				}
+			}
 			allPeers = append(allPeers, pagePeers...)
 			if err := c.store.SavePeers(ctx, pagePeers); err != nil {
 				sendEvent(ctx, events, Event{Kind: EventError, Error: fmt.Errorf("save synced peers: %w", err)})
@@ -994,7 +1010,7 @@ func (c *GotdClient) normalizeUpdateMessage(ctx context.Context, api *tg.Client,
 			p = mergePeerActivity(existing, p)
 		}
 	}
-	stMsg := c.normalizeTGMessage(ctx, api, accountID, p.Key, msg, entities)
+	stMsg := c.normalizeTGMessageWithPreview(ctx, api, accountID, p.Key, msg, entities, c.isFocusedPeer(p.Key))
 	return p, stMsg, true
 }
 
@@ -1023,8 +1039,8 @@ func (c *GotdClient) normalizeTGMessageWithPreview(ctx context.Context, api *tg.
 		media = c.enrichMediaPreview(ctx, api, media)
 	} else if media.Kind != "" {
 		media.PreviewText = mediaFallbackText(media)
+		media = resolveAnimatedLocalPath(c.cfg.Paths.MediaDir, media)
 	}
-	media = hydrateMediaPreviewFromDisk(c.cfg.Paths.MediaDir, media)
 	mediaJSON := ""
 	if media.Kind != "" {
 		if raw, err := json.Marshal(media); err == nil {
@@ -1104,14 +1120,6 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 			if !ok {
 				return
 			}
-			// #region agent log
-			cmdStart := time.Now()
-			debuglog.Log("H2", "client.go:consumeCommands", "command start", map[string]any{
-				"kind":    string(command.Kind),
-				"peerKey": command.PeerKey,
-				"runId":   "chat-switch-post",
-			})
-			// #endregion
 			switch command.Kind {
 			case CommandFocusChat:
 				c.setFocusPeer(command.PeerKey)
@@ -1119,7 +1127,7 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				peerKey := command.PeerKey
 				go c.openChat(ctx, accountID, api, events, peerKey)
 			case CommandSendText:
-				c.sendText(ctx, accountID, api, events, command.PeerKey, command.Text, command.ReplyToID)
+				c.sendText(ctx, accountID, api, events, command.PeerKey, command.Text, command.ReplyToID, command.MentionEntities)
 			case CommandRetrySend:
 				c.retrySendText(ctx, accountID, api, events, command.PeerKey, command.MessageID)
 			case CommandLoadOlder:
@@ -1148,15 +1156,15 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				c.sendReaction(ctx, accountID, api, events, command.PeerKey, command.MessageID, command.Reaction)
 			case CommandMarkViewed:
 				c.markMessageViewed(ctx, accountID, api, events, command.PeerKey, command.MessageID)
+			case CommandSearchMentions:
+				go c.searchMentions(ctx, accountID, api, events, command)
+			case CommandLoadBotCommands:
+				go c.loadBotCommands(ctx, accountID, api, events, command)
+			case CommandQueryInlineBot:
+				go c.queryInlineBot(ctx, accountID, api, events, command)
+			case CommandSendInlineResult:
+				c.sendInlineResult(ctx, accountID, api, events, command)
 			}
-			// #region agent log
-			debuglog.Log("H2-H5", "client.go:consumeCommands", "command done", map[string]any{
-				"kind":       string(command.Kind),
-				"peerKey":    command.PeerKey,
-				"durationMs": time.Since(cmdStart).Milliseconds(),
-				"runId":      "chat-switch-post",
-			})
-			// #endregion
 		}
 	}
 }
@@ -1165,26 +1173,11 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 	if c.store == nil || !c.isFocusedPeer(peerKey) {
 		return
 	}
-	// #region agent log
-	openStart := time.Now()
-	// #endregion
 	cached, err := c.store.MessagesForPeer(ctx, accountID, peerKey, 100)
 	cachedCount := 0
 	if err == nil && len(cached) > 0 {
 		cachedCount = len(cached)
-		// #region agent log
-		cacheConvStart := time.Now()
-		// #endregion
 		converted := c.telegramMessages(ctx, accountID, cached)
-		// #region agent log
-		debuglog.Log("H3", "client.go:openChat", "cache converted", map[string]any{
-			"peerKey":     peerKey,
-			"cachedCount": cachedCount,
-			"convertMs":   time.Since(cacheConvStart).Milliseconds(),
-			"elapsedMs":   time.Since(openStart).Milliseconds(),
-			"runId":       "chat-switch-post",
-		})
-		// #endregion
 		c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventMessages, PeerKey: peerKey, Messages: converted})
 		if c.isFocusedPeer(peerKey) {
 			toEnrich := append([]storage.Message(nil), cached...)
@@ -1194,23 +1187,6 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 				go c.refreshGroupReadMarks(ctx, accountID, api, events, peer, toRead)
 			}
 		}
-		// #region agent log
-		debuglog.Log("H3", "client.go:openChat", "cache EventMessages sent", map[string]any{
-			"peerKey":   peerKey,
-			"msgCount":  cachedCount,
-			"elapsedMs": time.Since(openStart).Milliseconds(),
-			"runId":     "chat-switch-post",
-		})
-		// #endregion
-	} else {
-		// #region agent log
-		debuglog.Log("H3", "client.go:openChat", "cache miss", map[string]any{
-			"peerKey":   peerKey,
-			"cacheErr":  err != nil,
-			"elapsedMs": time.Since(openStart).Milliseconds(),
-			"runId":     "chat-switch-post",
-		})
-		// #endregion
 	}
 	c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusLoadingHistory)})
 
@@ -1224,18 +1200,7 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 		if !c.isFocusedPeer(peerKey) {
 			return
 		}
-		// #region agent log
-		lockWaitStart := time.Now()
-		// #endregion
 		c.peerHistoryLock(peerKey).Lock()
-		// #region agent log
-		debuglog.Log("H5", "client.go:openChat", "history lock acquired", map[string]any{
-			"peerKey":    peerKey,
-			"lockWaitMs": time.Since(lockWaitStart).Milliseconds(),
-			"elapsedMs":  time.Since(openStart).Milliseconds(),
-			"runId":      "chat-switch-post",
-		})
-		// #endregion
 		defer c.peerHistoryLock(peerKey).Unlock()
 
 		var ok bool
@@ -1256,24 +1221,12 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 		if !c.isFocusedPeer(peerKey) {
 			return
 		}
-		// #region agent log
-		netStart := time.Now()
-		// #endregion
 		history, err := c.messagesGetHistory(ctx, api, &tg.MessagesGetHistoryRequest{Peer: input, Limit: 50})
-		// #region agent log
-		networkMs := time.Since(netStart).Milliseconds()
-		// #endregion
 		if err != nil {
 			c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventError, Error: fmt.Errorf("load history: %w", err)})
 			return
 		}
-		// #region agent log
-		normStart := time.Now()
-		// #endregion
 		msgs = c.normalizeMessagesWithPreview(ctx, api, accountID, peerKey, history, false)
-		// #region agent log
-		normalizeMs := time.Since(normStart).Milliseconds()
-		// #endregion
 		if err := c.store.SaveMessages(ctx, msgs); err != nil {
 			c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventError, Error: fmt.Errorf("save history: %w", err)})
 			return
@@ -1287,17 +1240,6 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 		} else {
 			c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusHistoryLoaded, len(cached))})
 		}
-		// #region agent log
-		debuglog.Log("H5-H6", "client.go:openChat", "network history done", map[string]any{
-			"peerKey":     peerKey,
-			"networkMs":   networkMs,
-			"normalizeMs": normalizeMs,
-			"msgCount":    len(msgs),
-			"skipReplace": skipReplace,
-			"elapsedMs":   time.Since(openStart).Milliseconds(),
-			"runId":       "chat-switch-post",
-		})
-		// #endregion
 		if c.isFocusedPeer(peerKey) {
 			c.refreshChannelViews(ctx, accountID, api, events, p, msgs)
 			toRead := append([]storage.Message(nil), msgs...)
@@ -1306,27 +1248,11 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 			go c.enrichPeerMessagePreviews(ctx, accountID, api, events, peerKey, toEnrich)
 		}
 	}()
-	// #region agent log
-	debuglog.Log("H6", "client.go:openChat", "openChat foreground done", map[string]any{
-		"peerKey":     peerKey,
-		"totalMs":     time.Since(openStart).Milliseconds(),
-		"cachedCount": cachedCount,
-		"runId":       "chat-switch-post",
-	})
-	// #endregion
 	go func() {
 		if !c.isFocusedPeer(peerKey) {
 			return
 		}
-		gapStart := time.Now()
 		c.fillKnownGapsForPeer(ctx, accountID, api, events, peerKey)
-		// #region agent log
-		debuglog.Log("H6", "client.go:openChat", "gap fill async done", map[string]any{
-			"peerKey":   peerKey,
-			"gapFillMs": time.Since(gapStart).Milliseconds(),
-			"runId":     "chat-switch-post",
-		})
-		// #endregion
 	}()
 }
 
@@ -1550,7 +1476,7 @@ func (c *GotdClient) downloadMedia(ctx context.Context, api *tg.Client, events c
 	sendEvent(ctx, events, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusMediaCachedAt, path)})
 }
 
-func (c *GotdClient) sendText(ctx context.Context, accountID string, api *tg.Client, events chan<- Event, peerKey, text string, replyToID int) {
+func (c *GotdClient) sendText(ctx context.Context, accountID string, api *tg.Client, events chan<- Event, peerKey, text string, replyToID int, mentionEntities []MessageEntityMentionName) {
 	if c.store == nil {
 		sendEvent(ctx, events, Event{Kind: EventError, Error: fmt.Errorf("storage is unavailable")})
 		return
@@ -1598,6 +1524,9 @@ func (c *GotdClient) sendText(ctx context.Context, accountID string, api *tg.Cli
 	}
 	if replyToID != 0 {
 		request.ReplyTo = &tg.InputReplyToMessage{ReplyToMsgID: replyToID}
+	}
+	if entities := buildMentionNameEntities(mentionEntities); len(entities) > 0 {
+		request.SetEntities(entities)
 	}
 	updates, err := api.MessagesSendMessage(ctx, request)
 	if err != nil {
@@ -1937,7 +1866,7 @@ func (c *GotdClient) enrichReplyAuthorFromStore(ctx context.Context, accountID s
 func (c *GotdClient) telegramMessages(ctx context.Context, accountID string, messages []storage.Message) []Message {
 	out := toTelegramMessages(messages)
 	for i := range out {
-		out[i].Media = hydrateMediaPreviewFromDisk(c.cfg.Paths.MediaDir, resolveAnimatedLocalPath(c.cfg.Paths.MediaDir, out[i].Media))
+		out[i].Media = resolveAnimatedLocalPath(c.cfg.Paths.MediaDir, out[i].Media)
 		c.enrichReplyAuthorFromStore(ctx, accountID, &out[i])
 	}
 	if len(messages) > 0 && c.store != nil {
@@ -2202,12 +2131,15 @@ func uploadGetFile(ctx context.Context, api *tg.Client, req *tg.UploadGetFileReq
 	}
 }
 
-func renderMediaPreview(path string) string {
-	return termmedia.RasterPreviewANSIToTview(path, termmedia.RasterPreviewOptions{
-		MaxCols: termmedia.PreviewMaxCols,
-		MaxRows: termmedia.PreviewMaxRows,
-	})
-}
+var (
+	renderMediaPreview = func(path string) string {
+		return termmedia.RasterPreviewANSIToTview(path, termmedia.RasterPreviewOptions{
+			MaxCols: termmedia.PreviewMaxCols,
+			MaxRows: termmedia.PreviewMaxRows,
+		})
+	}
+	renderVideoStillPreview = termmedia.StillPreviewANSIToTview
+)
 
 func mediaFallbackText(media MediaAttachment) string {
 	label := media.Label
@@ -2254,14 +2186,7 @@ func resolveAnimatedLocalPath(mediaDir string, media MediaAttachment) MediaAttac
 	if info, err := os.Stat(path); err != nil || info.Size() == 0 {
 		return media
 	}
-	oldPath := strings.ToLower(media.LocalPath)
 	media.LocalPath = path
-	if media.PreviewText == "" || strings.HasSuffix(oldPath, ".jpg") {
-		media.PreviewText = renderMediaPreview(path)
-		if media.PreviewText == "" {
-			media.PreviewText = termmedia.StillPreviewANSIToTview(path, termmedia.PreviewMaxCols, termmedia.PreviewMaxRows)
-		}
-	}
 	return media
 }
 

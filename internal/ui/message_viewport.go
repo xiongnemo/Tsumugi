@@ -72,6 +72,7 @@ func (v *MessageViewport) SetInlineAnim(enabled bool) {
 	v.inlineAnim = enabled
 	if !enabled {
 		v.gifTick = 0
+		media.ClearInlineAnimCache()
 	}
 	v.invalidateLayout()
 }
@@ -216,8 +217,43 @@ func (v *MessageViewport) PatchMessages(updates []telegram.Message) bool {
 		return false
 	}
 	anchor := v.selectedID()
+	_, _, iw, ih := v.GetInnerRect()
+	if iw <= 0 {
+		iw = v.layoutWidth
+	}
+	if iw <= 0 {
+		iw = 80
+	}
+	if ih <= 0 {
+		ih = 24
+	}
+	v.layout(iw)
+	oldTotal := v.totalHeight()
+	oldMaxScroll := maxInt(0, oldTotal-ih)
+	atBottom := oldMaxScroll <= 0 || v.scroll >= oldMaxScroll-1
+	oldSelOffset := 0
+	hadAnchor := false
+	if !atBottom && anchor != "" && v.selected >= 0 && v.selected < len(v.blocks) && v.selectedID() == anchor {
+		oldSelOffset = v.blocks[v.selected].offset
+		hadAnchor = true
+	}
 	v.rebuild(anchor)
 	v.invalidateLayout()
+	v.layout(iw)
+	if atBottom {
+		v.followEnd = true
+		v.pendingBelow = 0
+	} else if hadAnchor && v.selected >= 0 && v.selected < len(v.blocks) && v.selectedID() == anchor {
+		delta := v.blocks[v.selected].offset - oldSelOffset
+		v.scroll += delta
+		maxScr := maxInt(0, v.totalHeight()-ih)
+		if v.scroll > maxScr {
+			v.scroll = maxScr
+		}
+		if v.scroll < 0 {
+			v.scroll = 0
+		}
+	}
 	return true
 }
 
@@ -766,10 +802,8 @@ func buildMessageBlock(message telegram.Message, contentWidth int, rowOpts rende
 	rowOpts.IncludeMediaPreview = !inlineMedia
 	lines := render.MessageRowLines(message, contentWidth, rowOpts)
 	if inlineMedia {
-		if ansi := media.AnimatedInlineANSI(message.Media.LocalPath, opts.gifTick, media.PreviewMaxCols, media.PreviewMaxRows); ansi != "" {
-			gifLines := strings.Split(media.ANSISGRToTview(ansi), "\n")
-			lines = append(gifLines, lines...)
-		}
+		previewLines := normalizeInlinePreviewLines(message.Media.LocalPath, opts.gifTick)
+		lines = append(previewLines, lines...)
 	}
 	return messageBlock{
 		id:         message.ID,
@@ -777,6 +811,23 @@ func buildMessageBlock(message telegram.Message, contentWidth int, rowOpts rende
 		height:     len(lines) + 1,
 		alignRight: opts.layoutMode == render.LayoutIM && message.Outgoing,
 	}, inlineMedia
+}
+
+func normalizeInlinePreviewLines(path string, tick int) []string {
+	rows := media.PreviewMaxRows
+	if rows <= 0 {
+		return nil
+	}
+	out := make([]string, rows)
+	if path != "" {
+		if ansi := media.AnimatedInlineANSI(path, tick, media.PreviewMaxCols, rows); ansi != "" {
+			got := strings.Split(media.ANSISGRToTview(ansi), "\n")
+			for i := 0; i < rows && i < len(got); i++ {
+				out[i] = got[i]
+			}
+		}
+	}
+	return out
 }
 
 func (v *MessageViewport) refreshInlineAnimBlocks(width int) int {

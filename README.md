@@ -35,6 +35,8 @@ share the same Telegram API adapter after authentication.
   history gap hints appear in the message pane title.
 - Text message sending for the selected peer, including reply targets from the
   message action menu.
+- Compose suggestions for `@` mentions, `@inline_bot query` inline results, and
+  `/` bot commands in the current chat.
 - Media classification for emoji-preserving text, static stickers, animated
   stickers, video stickers, GIF animations, videos, photos, and documents.
 - Media cache/opening boundaries and a pure Go terminal half-block renderer for
@@ -48,8 +50,9 @@ Enable **inline GIF animation** in Settings (`?` → General) to animate cached
 GIF/MP4/WebM previews in the message list (Telegram GIFs and video stickers).
 MP4 and WebM decoding uses **ffmpeg** in your `PATH`. This redraws periodically
 and can use more CPU on busy chats. Decoded animation frames are kept in a shared
-96 MB in-memory LRU cache. You can also set `TSUMUGI_INLINE_ANIM=1` before first
-launch when the setting is not yet stored in SQLite.
+32 MB in-memory LRU cache; set `TSUMUGI_INLINE_ANIM_CACHE_MB` to a positive
+integer to raise or lower that budget. You can also set `TSUMUGI_INLINE_ANIM=1`
+before first launch when the setting is not yet stored in SQLite.
 
 Media-only messages (polls, contacts, locations, and other attachment types) show
 localized placeholders in the chat list and message view instead of `(empty message)`.
@@ -115,11 +118,14 @@ passphrase before starting the TUI. You can also provide it ahead of time:
 $env:TSUMUGI_PASSPHRASE = 'choose-a-long-local-passphrase'
 ```
 
-Memory diagnostics are opt-in and write to stderr:
+Memory diagnostics are opt-in and write JSON lines to `tsumugi-debug-mem.jsonl`
+in the working directory, keeping the TUI stderr clean. Use the pprof address
+when you need heap/profile verification alongside the periodic counters:
 
 ```pwsh
 $env:TSUMUGI_DEBUG_MEM = '1'       # periodic MemStats, viewport, cache, and gap-fill counts
 $env:TSUMUGI_PPROF_ADDR = ':6060'  # enable net/http/pprof on this address
+$env:TSUMUGI_INLINE_ANIM_CACHE_MB = '64'
 ```
 
 For bot mode:
@@ -188,6 +194,11 @@ UI labels. Editable profiles are stored in the local SQLite database.
   messages include the calendar date (`YYYY-MM-DD HH:MM`) so mixed-day threads
   stay readable
 - `i`: focus composer
+- In the composer, type `@` for mention suggestions, `@inline_bot query` for
+  inline bot results, or `/` for current-chat bot commands. When the inline
+  suggestion panel is open, `Up`/`Down` changes the highlighted row, `Tab` or
+  `Enter` accepts it, and `Esc` closes the panel without clearing typed text.
+  Rows can also be clicked with the mouse.
 - `/`: search the focused view
 - `D`: download/cache the selected message media preview
 - `O`: open the selected message media preview externally
@@ -195,6 +206,9 @@ UI labels. Editable profiles are stored in the local SQLite database.
 - `P`: show proxy settings
 - `Esc`: close modal and return to chat list
 - `q` or `Ctrl+C`: quit
+
+Compose suggestion limits: the panel shows at most five visible entries. Inline
+bots that require location are reported as unsupported in this MVP.
 
 ## Development
 

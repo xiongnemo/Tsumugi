@@ -2,7 +2,7 @@ package ui
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"os"
 	"runtime"
 	"time"
@@ -10,7 +10,10 @@ import (
 	"github.com/nemo/Tsumugi/internal/media"
 )
 
-const memoryDiagnosticsInterval = 30 * time.Second
+const (
+	memoryDiagnosticsInterval = 30 * time.Second
+	memoryDiagnosticsFile     = "tsumugi-debug-mem.jsonl"
+)
 
 func (a *App) runMemoryDiagnostics(ctx context.Context) {
 	if os.Getenv("TSUMUGI_DEBUG_MEM") != "1" {
@@ -53,23 +56,40 @@ func (a *App) logMemoryDiagnostics(ctx context.Context) {
 	}
 
 	cache := media.InlineAnimCacheStats()
-	fmt.Fprintf(os.Stderr,
-		"tsumugi mem: alloc=%dMB heap=%dMB sys=%dMB goroutines=%d viewport_messages=%d viewport_blocks=%d rendered_lines=%d viewport_limit=%d anim_cache_entries=%d anim_cache=%dMB anim_cache_budget=%dMB gap_fill_queue=%d\n",
-		bytesToMB(ms.Alloc),
-		bytesToMB(ms.HeapAlloc),
-		bytesToMB(ms.Sys),
-		runtime.NumGoroutine(),
-		viewport.Messages,
-		viewport.Blocks,
-		viewport.RenderedLines,
-		viewport.Limit,
-		cache.Entries,
-		bytesToMB(uint64(cache.Bytes)),
-		bytesToMB(uint64(cache.Budget)),
-		gapFillQueued,
-	)
+	appendMemoryDebugLog(ms, viewport, cache, gapFillQueued)
 }
 
-func bytesToMB(n uint64) uint64 {
-	return n / (1024 * 1024)
+func appendMemoryDebugLog(ms runtime.MemStats, viewport MessageViewportStats, cache media.AnimCacheStats, gapFillQueued int) {
+	payload := map[string]any{
+		"message":   "memory diagnostics snapshot",
+		"timestamp": time.Now().UnixMilli(),
+		"data": map[string]any{
+			"allocBytes":        ms.Alloc,
+			"heapAllocBytes":    ms.HeapAlloc,
+			"heapIdleBytes":     ms.HeapIdle,
+			"heapReleasedBytes": ms.HeapReleased,
+			"heapInuseBytes":    ms.HeapInuse,
+			"sysBytes":          ms.Sys,
+			"numGC":             ms.NumGC,
+			"goroutines":        runtime.NumGoroutine(),
+			"viewportMessages":  viewport.Messages,
+			"viewportBlocks":    viewport.Blocks,
+			"renderedLines":     viewport.RenderedLines,
+			"viewportLimit":     viewport.Limit,
+			"animCacheEntries":  cache.Entries,
+			"animCacheBytes":    cache.Bytes,
+			"animCacheBudget":   cache.Budget,
+			"gapFillQueued":     gapFillQueued,
+		},
+	}
+	line, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile(memoryDiagnosticsFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(line, '\n'))
 }

@@ -84,6 +84,7 @@ const (
 	KeyUIUntitled             = "ui.untitled"
 	KeyUIFooterMode           = "ui.footer_mode"
 	KeyUIFooterTabFocus       = "ui.footer_tab_focus"
+	KeyUIFooterBacktabFocus   = "ui.footer_backtab_focus"
 	KeyUIFooterEnter          = "ui.footer_enter"
 	KeyUIFooterLayout         = "ui.footer_layout"
 	KeyUIFooterReact          = "ui.footer_react"

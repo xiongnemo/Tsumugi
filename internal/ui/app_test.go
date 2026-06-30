@@ -1,6 +1,11 @@
 package ui
 
 import (
+	"image"
+	"image/color"
+	"image/gif"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -10,6 +15,7 @@ import (
 	"github.com/rivo/tview"
 
 	"github.com/nemo/Tsumugi/internal/i18n"
+	"github.com/nemo/Tsumugi/internal/media"
 	"github.com/nemo/Tsumugi/internal/render"
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
@@ -29,20 +35,62 @@ func keyEvent(key tcell.Key) *tcell.EventKey {
 	return tcell.NewEventKey(key, 0, tcell.ModNone)
 }
 
-func TestCaptureMainShellTabCyclesFocus(t *testing.T) {
+func TestCaptureMainShellTabCyclesFocusForward(t *testing.T) {
 	app := newCaptureTestApp()
-	app.app.SetFocus(app.chats)
 
-	if got := app.capture(keyEvent(tcell.KeyTAB)); got != nil {
-		t.Fatalf("main shell Tab returned event, want consumed")
+	tests := []struct {
+		name  string
+		start tview.Primitive
+		want  tview.Primitive
+	}{
+		{name: "folders to chats", start: app.folders, want: app.chats},
+		{name: "chats to messages", start: app.chats, want: app.messages},
+		{name: "messages to composer", start: app.messages, want: app.composer},
+		{name: "composer to folders", start: app.composer, want: app.folders},
 	}
-	if got := app.app.GetFocus(); got != app.messages {
-		t.Fatalf("focus after Tab = %T, want messages", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app.app.SetFocus(tt.start)
+			if got := app.capture(keyEvent(tcell.KeyTAB)); got != nil {
+				t.Fatalf("main shell Tab returned event, want consumed")
+			}
+			if got := app.app.GetFocus(); got != tt.want {
+				t.Fatalf("focus after Tab = %T, want %T", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCaptureMainShellBacktabCyclesFocusReverse(t *testing.T) {
+	app := newCaptureTestApp()
+
+	tests := []struct {
+		name  string
+		start tview.Primitive
+		want  tview.Primitive
+	}{
+		{name: "folders to composer", start: app.folders, want: app.composer},
+		{name: "chats to folders", start: app.chats, want: app.folders},
+		{name: "messages to chats", start: app.messages, want: app.chats},
+		{name: "composer to messages", start: app.composer, want: app.messages},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app.app.SetFocus(tt.start)
+			if got := app.capture(keyEvent(tcell.KeyBacktab)); got != nil {
+				t.Fatalf("main shell Backtab returned event, want consumed")
+			}
+			if got := app.app.GetFocus(); got != tt.want {
+				t.Fatalf("focus after Backtab = %T, want %T", got, tt.want)
+			}
+		})
 	}
 }
 
 func TestCapturePassesNavigationKeysToOverlayForms(t *testing.T) {
-	keys := []tcell.Key{tcell.KeyTAB, tcell.KeyLeft, tcell.KeyRight}
+	keys := []tcell.Key{tcell.KeyTAB, tcell.KeyBacktab, tcell.KeyLeft, tcell.KeyRight}
 	surfaces := []string{"onboarding", "search", "auth", "proxy", "reactions"}
 
 	for _, surface := range surfaces {
@@ -68,17 +116,19 @@ func TestCapturePassesNavigationKeysToOverlayForms(t *testing.T) {
 	}
 }
 
-func TestCapturePassesTabToNonMainOverlayList(t *testing.T) {
+func TestCapturePassesTabAndBacktabToNonMainOverlayList(t *testing.T) {
 	app := newCaptureTestApp()
 	list := tview.NewList()
 	app.app.SetFocus(list)
 
-	event := keyEvent(tcell.KeyTAB)
-	if got := app.capture(event); got != event {
-		t.Fatal("overlay list Tab was not passed through")
-	}
-	if got := app.app.GetFocus(); got != list {
-		t.Fatalf("overlay list Tab changed focus to %T", got)
+	for _, key := range []tcell.Key{tcell.KeyTAB, tcell.KeyBacktab} {
+		event := keyEvent(key)
+		if got := app.capture(event); got != event {
+			t.Fatalf("overlay list key %v was not passed through", key)
+		}
+		if got := app.app.GetFocus(); got != list {
+			t.Fatalf("overlay list key %v changed focus to %T", key, got)
+		}
 	}
 }
 
@@ -191,6 +241,51 @@ func TestSelectMessageByIDScrollsToReplyTarget(t *testing.T) {
 	}
 	if got := selected.ID; got != "10" {
 		t.Fatalf("selected message = %s, want 10", got)
+	}
+}
+
+func TestSetInlineAnimDisabledClearsDecodedFrameCache(t *testing.T) {
+	media.ClearInlineAnimCache()
+	t.Cleanup(media.ClearInlineAnimCache)
+
+	gifPath := filepath.Join(t.TempDir(), "anim.gif")
+	writeTinyGIF(t, gifPath)
+
+	_ = media.AnimatedInlineANSI(gifPath, 0, 4, 2)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if stats := media.InlineAnimCacheStats(); stats.Entries > 0 && stats.Bytes > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if stats := media.InlineAnimCacheStats(); stats.Entries == 0 || stats.Bytes == 0 {
+		t.Fatalf("animation cache was not populated before disabling: %+v", stats)
+	}
+
+	viewport := NewMessageViewport()
+	viewport.SetInlineAnim(false)
+	if stats := media.InlineAnimCacheStats(); stats.Entries != 0 || stats.Bytes != 0 {
+		t.Fatalf("animation cache was not cleared after disabling inline animation: %+v", stats)
+	}
+}
+
+func writeTinyGIF(t *testing.T, path string) {
+	t.Helper()
+	palette := color.Palette{color.Black, color.White}
+	first := image.NewPaletted(image.Rect(0, 0, 2, 2), palette)
+	second := image.NewPaletted(image.Rect(0, 0, 2, 2), palette)
+	second.SetColorIndex(0, 0, 1)
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := gif.EncodeAll(f, &gif.GIF{
+		Image: []*image.Paletted{first, second},
+		Delay: []int{5, 5},
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

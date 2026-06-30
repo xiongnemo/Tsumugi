@@ -7,7 +7,6 @@ import (
 
 	"github.com/gotd/td/tg"
 
-	"github.com/nemo/Tsumugi/internal/debuglog"
 	termmedia "github.com/nemo/Tsumugi/internal/media"
 )
 
@@ -56,14 +55,6 @@ func (c *GotdClient) refreshMessageMedia(ctx context.Context, api *tg.Client, ac
 		modified, err = api.MessagesGetMessages(ctx, msgID)
 	}
 	if err != nil {
-		// #region agent log
-		debuglog.Log("H11", "media_refresh.go:refreshMessageMedia", "fetch message failed", map[string]any{
-			"peerKey":   peerKey,
-			"messageID": messageID,
-			"err":       err.Error(),
-			"runId":     "media-preview-post",
-		})
-		// #endregion
 		return MediaAttachment{}, false
 	}
 	msg, ok := tgMessageByID(modified, messageID)
@@ -74,14 +65,6 @@ func (c *GotdClient) refreshMessageMedia(ctx context.Context, api *tg.Client, ac
 	if media.Kind == "" {
 		return MediaAttachment{}, false
 	}
-	// #region agent log
-	debuglog.Log("H11", "media_refresh.go:refreshMessageMedia", "file ref refreshed", map[string]any{
-		"peerKey":   peerKey,
-		"messageID": messageID,
-		"kind":      media.Kind,
-		"runId":     "media-preview-post",
-	})
-	// #endregion
 	return media, true
 }
 
@@ -122,13 +105,6 @@ func (c *GotdClient) enrichMediaPreviewAttempt(ctx context.Context, api *tg.Clie
 	}
 	localPath, err := c.ensureMediaPreview(ctx, api, media)
 	if err != nil {
-		// #region agent log
-		debuglog.Log("H8", "client.go:enrichMediaPreview", "preview unavailable", map[string]any{
-			"kind":  media.Kind,
-			"err":   err.Error(),
-			"runId": "media-preview-post",
-		})
-		// #endregion
 		media.PreviewText = mediaFallbackText(media) + " (preview unavailable)"
 		media = hydrateMediaPreviewFromDisk(c.cfg.Paths.MediaDir, media)
 		return media, isFileReferenceExpired(err)
@@ -137,19 +113,11 @@ func (c *GotdClient) enrichMediaPreviewAttempt(ctx context.Context, api *tg.Clie
 		media.LocalPath = localPath
 		media.PreviewText = renderMediaPreview(localPath)
 		if media.PreviewText == "" {
-			media.PreviewText = termmedia.StillPreviewANSIToTview(localPath, termmedia.PreviewMaxCols, termmedia.PreviewMaxRows)
+			media.PreviewText = renderVideoStillPreview(localPath, termmedia.PreviewMaxCols, termmedia.PreviewMaxRows)
 		}
 		if media.PreviewText == "" {
 			media.PreviewText = mediaFallbackText(media) + " (cached; press O to open)"
 		}
 	}
-	// #region agent log
-	debuglog.Log("H8", "client.go:enrichMediaPreview", "preview enriched", map[string]any{
-		"kind":       media.Kind,
-		"raster":     PreviewIsRaster(media.PreviewText),
-		"previewLen": len(media.PreviewText),
-		"runId":      "media-preview-post",
-	})
-	// #endregion
 	return media, false
 }

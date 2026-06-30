@@ -127,16 +127,51 @@ func decodeVideoFrames(path string) (*videoDecoded, error) {
 	return d, nil
 }
 
+func decodeVideoStillFrame(path string) (image.Image, error) {
+	tmpDir, err := os.MkdirTemp("", "tsumugi-video-still-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	framePath := filepath.Join(tmpDir, "frame.png")
+	cmd := exec.Command("ffmpeg",
+		"-loglevel", "error",
+		"-i", path,
+		"-frames:v", "1",
+		framePath,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("ffmpeg video still: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	f, err := os.Open(framePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		return nil, err
+	}
+	return img, nil
+}
+
 // StillPreviewANSIToTview renders the first frame of a local video as a tview-safe raster preview.
 func StillPreviewANSIToTview(path string, maxCols, maxRows int) string {
 	if maxCols <= 0 || maxRows <= 0 || path == "" || !VideoPathMayAnimate(path) {
 		return ""
 	}
-	d, err := decodeVideoFrames(path)
-	if err != nil || d == nil || len(d.frames) == 0 {
-		return ""
+	var img image.Image
+	if d, ok := videoFramesCached(path); ok && len(d.frames) > 0 {
+		img = d.frames[0]
+	} else {
+		var err error
+		img, err = decodeVideoStillFrame(path)
+		if err != nil {
+			return ""
+		}
 	}
-	raw := RenderTerminalImage(d.frames[0], maxCols, maxRows)
+	raw := RenderTerminalImage(img, maxCols, maxRows)
 	return ANSISGRToTview(raw)
 }
 

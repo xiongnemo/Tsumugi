@@ -9,7 +9,6 @@ import (
 
 	"github.com/gotd/td/tg"
 
-	"github.com/nemo/Tsumugi/internal/debuglog"
 	"github.com/nemo/Tsumugi/internal/i18n"
 	termmedia "github.com/nemo/Tsumugi/internal/media"
 	"github.com/nemo/Tsumugi/internal/storage"
@@ -32,30 +31,15 @@ func hydrateMediaPreviewFromDisk(mediaDir string, media MediaAttachment) MediaAt
 		}
 		raster := renderMediaPreview(path)
 		if raster == "" {
-			raster = termmedia.StillPreviewANSIToTview(path, termmedia.PreviewMaxCols, termmedia.PreviewMaxRows)
+			raster = renderVideoStillPreview(path, termmedia.PreviewMaxCols, termmedia.PreviewMaxRows)
 		}
 		if raster == "" {
 			continue
 		}
-		// #region agent log
-		debuglog.Log("H7-H8", "media_hydrate.go:hydrate", "disk preview hit", map[string]any{
-			"kind":   media.Kind,
-			"path":   filepath.Base(path),
-			"runId":  "media-preview-post",
-		})
-		// #endregion
 		media.LocalPath = path
 		media.PreviewText = raster
 		return media
 	}
-	// #region agent log
-	debuglog.Log("H7-H9", "media_hydrate.go:hydrate", "no disk preview", map[string]any{
-		"kind":      media.Kind,
-		"mime":      media.MimeType,
-		"localPath": filepath.Base(media.LocalPath),
-		"runId":     "media-preview-post",
-	})
-	// #endregion
 	return media
 }
 
@@ -121,13 +105,6 @@ func (c *GotdClient) enrichPeerMessagePreviews(ctx context.Context, accountID st
 		Kind:      EventStatus,
 		StatusMsg: i18n.M(i18n.KeyStatusLoadingMediaPreviews, 0, needCount),
 	})
-	// #region agent log
-	debuglog.Log("H10", "media_hydrate.go:enrichPeerMessagePreviews", "enrich start", map[string]any{
-		"peerKey":   peerKey,
-		"needCount": needCount,
-		"runId":     "media-preview-post",
-	})
-	// #endregion
 
 	patches := make([]Message, 0, mediaPreviewPatchBatch)
 	updated := make([]storage.Message, 0, mediaPreviewPatchBatch)
@@ -140,15 +117,6 @@ func (c *GotdClient) enrichPeerMessagePreviews(ctx context.Context, accountID st
 			_ = c.store.SaveMessages(ctx, updated)
 			updated = updated[:0]
 		}
-		// #region agent log
-		debuglog.Log("H10", "media_hydrate.go:enrichPeerMessagePreviews", "patch previews", map[string]any{
-			"peerKey":    peerKey,
-			"patchCount": len(patches),
-			"doneCount":  doneCount,
-			"needCount":  needCount,
-			"runId":      "media-preview-post",
-		})
-		// #endregion
 		c.sendFocusedEvent(ctx, events, peerKey, Event{
 			Kind:      EventStatus,
 			StatusMsg: i18n.M(i18n.KeyStatusLoadingMediaPreviews, doneCount, needCount),
@@ -179,15 +147,6 @@ func (c *GotdClient) enrichPeerMessagePreviews(ctx context.Context, accountID st
 		media = c.enrichStoredMediaPreview(ctx, api, accountID, peerKey, st.ID, media)
 		media = hydrateMediaPreviewFromDisk(c.cfg.Paths.MediaDir, media)
 		if !PreviewIsRaster(media.PreviewText) {
-			// #region agent log
-			debuglog.Log("H11", "media_hydrate.go:enrichPeerMessagePreviews", "enrich skipped", map[string]any{
-				"peerKey":     peerKey,
-				"messageID":   st.ID,
-				"kind":        media.Kind,
-				"downloadKey": media.DownloadKey,
-				"runId":       "media-preview-post",
-			})
-			// #endregion
 			continue
 		}
 		if raw, err := json.Marshal(media); err == nil {
@@ -210,12 +169,4 @@ func (c *GotdClient) enrichPeerMessagePreviews(ctx context.Context, accountID st
 		Kind:      EventStatus,
 		StatusMsg: i18n.M(i18n.KeyStatusMediaPreviewsReady, doneCount),
 	})
-	// #region agent log
-	debuglog.Log("H10", "media_hydrate.go:enrichPeerMessagePreviews", "enrich done", map[string]any{
-		"peerKey":   peerKey,
-		"doneCount": doneCount,
-		"needCount": needCount,
-		"runId":     "media-preview-post",
-	})
-	// #endregion
 }

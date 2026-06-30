@@ -82,6 +82,7 @@
 
   "ui.footer_mode": "模式: %s",
   "ui.footer_tab_focus": "Tab 切换焦点",
+  "ui.footer_backtab_focus": "Shift+Tab 上一个焦点",
   "ui.footer_enter": "Enter 打开/展开",
   "ui.footer_layout": "L 布局",
   "ui.footer_react": "R 表情",

@@ -30,8 +30,15 @@ func (c *GotdClient) syncPinnedDialogs(ctx context.Context, accountID string, ap
 	pinnedKeys := make([]string, 0, len(res.GetDialogs()))
 	peers := make([]storage.Peer, 0, len(res.GetDialogs()))
 	for index, dialog := range res.GetDialogs() {
+		d, ok := dialog.(*tg.Dialog)
+		if !ok {
+			continue
+		}
 		peer, _, ok := normalizeDialog(accountID, dialog, messageByID, entities, index)
 		if !ok {
+			if key, ok := peerKeyFromDialog(accountID, d, entities); ok {
+				pinnedKeys = append(pinnedKeys, key)
+			}
 			continue
 		}
 		peer.Pinned = true
@@ -41,13 +48,22 @@ func (c *GotdClient) syncPinnedDialogs(ctx context.Context, accountID string, ap
 			peer.Pinned = true
 			peer.PinnedOrder = index + 1
 		}
+		if folderID == 0 {
+			peer.FolderID = 0
+			peer.FolderTitle = ""
+		}
 		pinnedKeys = append(pinnedKeys, peer.Key)
 		peers = append(peers, peer)
 	}
 
 	if folderID == 0 {
-		if err := c.store.ClearGlobalPins(ctx, accountID); err != nil {
-			sendEvent(ctx, events, Event{Kind: EventError, Error: fmt.Errorf("clear global pins: %w", err)})
+		dialogCount := len(res.GetDialogs())
+		if dialogCount > 0 && len(pinnedKeys) == 0 {
+			sendEvent(ctx, events, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusPinnedDialogsError, folderID, fmt.Errorf("no pinned peers parsed"))})
+			return
+		}
+		if err := c.store.ApplyGlobalPins(ctx, accountID, pinnedKeys); err != nil {
+			sendEvent(ctx, events, Event{Kind: EventError, Error: fmt.Errorf("apply global pins: %w", err)})
 			return
 		}
 		if len(peers) > 0 {
@@ -140,4 +156,15 @@ func preferPeer(existing, incoming storage.Peer) bool {
 		return true
 	}
 	return false
+}
+
+func peerKeyFromDialog(accountID string, dialog *tg.Dialog, entities entitiesByID) (string, bool) {
+	if dialog == nil {
+		return "", false
+	}
+	peer, ok := peerFromRef(accountID, dialog.Peer, entities)
+	if !ok {
+		return "", false
+	}
+	return peer.Key, true
 }

@@ -294,7 +294,11 @@ func (db *DB) SavePeers(ctx context.Context, peers []Peer) error {
 				last_preview = excluded.last_preview,
 				last_message_at = excluded.last_message_at,
 				top_message_id = excluded.top_message_id,
-				folder_id = CASE WHEN excluded.folder_id != 0 OR peers.folder_id = 0 THEN excluded.folder_id ELSE peers.folder_id END,
+				folder_id = CASE
+					WHEN excluded.pinned != 0 AND excluded.folder_id = 0 THEN 0
+					WHEN excluded.folder_id != 0 OR peers.folder_id = 0 THEN excluded.folder_id
+					ELSE peers.folder_id
+				END,
 				folder_title = excluded.folder_title,
 				pinned = excluded.pinned,
 				pinned_order = excluded.pinned_order,
@@ -637,6 +641,86 @@ func (db *DB) ClearGlobalPins(ctx context.Context, accountID string) error {
 		WHERE account_id = ? AND folder_id != 1
 	`, formatTime(time.Now().UTC()), accountID)
 	return err
+}
+
+// ApplyGlobalPins replaces main-folder pin flags using stable peer keys in order.
+func (db *DB) ApplyGlobalPins(ctx context.Context, accountID string, orderedKeys []string) error {
+	tx, err := db.sql.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	now := formatTime(time.Now().UTC())
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE peers SET pinned = 0, pinned_order = 0, updated_at = ?
+		WHERE account_id = ? AND folder_id != 1
+	`, now, accountID); err != nil {
+		return err
+	}
+	for index, key := range orderedKeys {
+		if key == "" {
+			continue
+		}
+		pinned := false
+		for _, alias := range peerKeyAliases(key) {
+			res, err := tx.ExecContext(ctx, `
+				UPDATE peers SET pinned = 1, pinned_order = ?, updated_at = ?
+				WHERE account_id = ? AND key = ? AND folder_id != 1
+			`, index+1, now, accountID, alias)
+			if err != nil {
+				return err
+			}
+			rows, err := res.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if rows > 0 {
+				pinned = true
+				break
+			}
+		}
+		if pinned {
+			continue
+		}
+		kind, id, ok := parsePeerKey(key)
+		if !ok {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE peers SET pinned = 1, pinned_order = ?, updated_at = ?
+			WHERE account_id = ? AND kind = ? AND telegram_id = ? AND folder_id != 1
+		`, index+1, now, accountID, kind, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func peerKeyAliases(key string) []string {
+	if key == "" {
+		return nil
+	}
+	keys := []string{key}
+	const selfPrefix = "self:"
+	const userPrefix = "user:"
+	if strings.HasPrefix(key, selfPrefix) {
+		keys = append(keys, userPrefix+strings.TrimPrefix(key, selfPrefix))
+	} else if strings.HasPrefix(key, userPrefix) {
+		keys = append(keys, selfPrefix+strings.TrimPrefix(key, userPrefix))
+	}
+	return keys
+}
+
+func parsePeerKey(key string) (kind string, id int64, ok bool) {
+	before, after, found := strings.Cut(key, ":")
+	if !found || before == "" || after == "" {
+		return "", 0, false
+	}
+	parsed, err := strconv.ParseInt(after, 10, 64)
+	if err != nil {
+		return "", 0, false
+	}
+	return before, parsed, true
 }
 
 func (db *DB) UpdateDialogFilterPinnedPeers(ctx context.Context, accountID string, filterID int, peers []string) error {

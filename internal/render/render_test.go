@@ -30,6 +30,9 @@ func TestFooterShowsProxy(t *testing.T) {
 		Source:  network.SourceManual,
 		Address: "127.0.0.1:1080",
 	})
+	if !strings.Contains(footer, "Shift+Tab previous focus") {
+		t.Fatalf("footer did not include reverse focus hint: %q", footer)
+	}
 	if !strings.Contains(footer, "proxy: 127.0.0.1:1080") {
 		t.Fatalf("footer did not include proxy: %q", footer)
 	}

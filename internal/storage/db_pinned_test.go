@@ -34,6 +34,23 @@ func TestClearGlobalPinsAndUpdateDialogFilterPinnedPeers(t *testing.T) {
 			}
 		}
 	}
+	if err := db.ApplyGlobalPins(ctx, "user:1", []string{"user:3", "user:2"}); err != nil {
+		t.Fatal(err)
+	}
+	peers, err = db.ListPeers(ctx, "user:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKey := map[string]Peer{}
+	for _, p := range peers {
+		byKey[p.Key] = p
+	}
+	if !byKey["user:2"].Pinned || byKey["user:2"].PinnedOrder != 2 {
+		t.Fatalf("user:2 pin = %+v, want pinned order 2", byKey["user:2"])
+	}
+	if !byKey["user:3"].Pinned || byKey["user:3"].PinnedOrder != 1 {
+		t.Fatalf("user:3 pin = %+v, want pinned order 1", byKey["user:3"])
+	}
 	if err := db.SaveDialogFilters(ctx, "user:1", []DialogFilter{
 		{AccountID: "user:1", ID: 2, Title: "Work", Kind: "telegram"},
 	}); err != nil {
@@ -48,5 +65,47 @@ func TestClearGlobalPinsAndUpdateDialogFilterPinnedPeers(t *testing.T) {
 	}
 	if len(got) != 1 || len(got[0].PinnedPeers) != 2 || got[0].PinnedPeers[0] != "user:9" {
 		t.Fatalf("pinned peers = %+v", got[0].PinnedPeers)
+	}
+}
+
+func TestApplyGlobalPinsSelfKeyAliasesUserRow(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	if err := db.SavePeers(ctx, []Peer{
+		{AccountID: "user:1", Key: "user:2", Kind: "user", ID: 2, Title: "Saved", FolderID: 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ApplyGlobalPins(ctx, "user:1", []string{"self:2"}); err != nil {
+		t.Fatal(err)
+	}
+	peers, err := db.ListPeers(ctx, "user:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != 1 || !peers[0].Pinned || peers[0].PinnedOrder != 1 {
+		t.Fatalf("user:2 pin = %+v, want pinned order 1", peers[0])
+	}
+}
+
+func TestSavePeersPinnedMainFolderClearsArchiveFolder(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	if err := db.SavePeers(ctx, []Peer{
+		{AccountID: "user:1", Key: "channel:9", Kind: "channel", ID: 9, Title: "News", FolderID: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SavePeers(ctx, []Peer{
+		{AccountID: "user:1", Key: "channel:9", Kind: "channel", ID: 9, Title: "News", FolderID: 0, Pinned: true, PinnedOrder: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	peer, ok, err := db.Peer(ctx, "user:1", "channel:9")
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	if peer.FolderID != 0 || !peer.Pinned {
+		t.Fatalf("channel:9 = %+v, want main-folder pin", peer)
 	}
 }

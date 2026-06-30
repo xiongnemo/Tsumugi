@@ -35,6 +35,8 @@ type App struct {
 	chats            *tview.List
 	messages         *MessageViewport
 	composer         *tview.InputField
+	composeStack     *tview.Flex
+	rightPane        *tview.Flex
 	footer           *tview.TextView
 	statusBar        *tview.Flex
 	statusConn       *tview.TextView
@@ -75,6 +77,7 @@ type App struct {
 	gapFillQueued    map[string]struct{}
 	control          chan<- ControlEvent
 	onboardingActive bool
+	suggest          *composeSuggestState
 }
 
 func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
@@ -107,6 +110,7 @@ func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, comman
 	}
 	tui.messages.SetInlineAnim(tui.settings.InlineAnim)
 	tui.messages.SetLayoutMode(render.ParseLayoutMode(tui.settings.OutgoingLayout))
+	tui.initComposeSuggestions()
 	tui.build()
 	tui.applyMainLocale()
 	return tui
@@ -175,16 +179,21 @@ func (a *App) build() {
 	a.messages.SetOnReachOlder(a.onReachOlderMessages)
 	a.footer.SetText(render.Footer(string(a.cfg.AuthMode), version.String(), a.cfg.Proxy))
 
-	right := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(a.messages, 0, 1, false).
+	a.composeStack = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(a.suggest.panel, 0, 0, false).
 		AddItem(a.composer, 3, 0, false).
+		AddItem(a.suggest.ghost, 1, 0, false)
+
+	a.rightPane = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(a.messages, 0, 1, false).
+		AddItem(a.composeStack, 4, 0, false).
 		AddItem(a.statusBar, 1, 0, false).
 		AddItem(a.footer, 1, 0, false)
 
 	a.root = tview.NewFlex().
 		AddItem(a.folders, 16, 0, false).
 		AddItem(a.chats, 34, 0, true).
-		AddItem(right, 0, 1, false)
+		AddItem(a.rightPane, 0, 1, false)
 
 	a.chats.SetChangedFunc(func(index int, _, _ string, _ rune) {
 		if a.chatsListRestoring {
@@ -198,20 +207,24 @@ func (a *App) build() {
 
 	a.composer.SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEnter {
-			text := strings.TrimSpace(a.composer.GetText())
+			rawText := a.composer.GetText()
+			text := strings.TrimSpace(rawText)
 			if text != "" {
 				replyToID := 0
 				if a.replyTarget != nil {
 					replyToID, _ = strconv.Atoi(a.replyTarget.ID)
 				}
-				a.commands <- telegram.Command{Kind: telegram.CommandSendText, PeerKey: a.currentChat, Text: text, ReplyToID: replyToID}
-				a.composer.SetText("")
+				entities := a.takeMentionEntitiesForSend(rawText, text)
+				a.commands <- telegram.Command{Kind: telegram.CommandSendText, PeerKey: a.currentChat, Text: text, ReplyToID: replyToID, MentionEntities: entities}
+				a.setComposerText("")
+				a.closeComposeSuggestions()
 				a.clearReplyTarget()
 				a.setStatusMsg(i18n.KeyStatusSending)
 			}
 			a.updateFocusStyle()
 		}
 	})
+	a.composer.SetChangedFunc(a.onComposerChanged)
 
 	a.app.SetRoot(a.root, true)
 	a.app.SetInputCapture(a.capture)
@@ -224,6 +237,9 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		return a.captureSettings(event)
 	}
 	focus := a.app.GetFocus()
+	if a.captureComposeSuggestions(event) {
+		return nil
+	}
 	if a.focusedOverlayPrimitiveOwnsNavigation(focus, event) {
 		return event
 	}
@@ -289,6 +305,8 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 			}
 			return nil
 		}
+		a.switchFocusPrevious()
+		return nil
 	case tcell.KeyEsc:
 		if a.msgActionForm != nil {
 			a.restoreMessageFocus()
@@ -441,6 +459,11 @@ func (a *App) applyEvent(event telegram.Event) {
 	}
 	if event.Background != nil {
 		a.setBackgroundState(event.Background)
+	}
+	switch event.Kind {
+	case telegram.EventMentionSuggestions, telegram.EventBotCommandSuggestions, telegram.EventInlineResultSuggestions:
+		a.applyComposeSuggestions(event)
+		return
 	}
 	if !event.StatusMsg.IsZero() {
 		a.setStatusFrom(event.StatusMsg)
@@ -901,6 +924,20 @@ func (a *App) switchFocus() {
 		a.app.SetFocus(a.composer)
 	default:
 		a.app.SetFocus(a.folders)
+	}
+	a.updateFocusStyle()
+}
+
+func (a *App) switchFocusPrevious() {
+	switch a.app.GetFocus() {
+	case a.composer:
+		a.app.SetFocus(a.messages)
+	case a.messages:
+		a.app.SetFocus(a.chats)
+	case a.chats:
+		a.app.SetFocus(a.folders)
+	default:
+		a.app.SetFocus(a.composer)
 	}
 	a.updateFocusStyle()
 }

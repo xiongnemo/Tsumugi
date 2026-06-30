@@ -3,10 +3,17 @@ package media
 import (
 	"container/list"
 	"image"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 )
 
-const defaultInlineAnimCacheBytes int64 = 96 * 1024 * 1024
+const (
+	defaultInlineAnimCacheBytes int64 = 32 * 1024 * 1024
+	inlineAnimCacheEnv                = "TSUMUGI_INLINE_ANIM_CACHE_MB"
+	bytesPerMegabyte            int64 = 1024 * 1024
+)
 
 type AnimCacheStats struct {
 	Entries int
@@ -28,7 +35,26 @@ type animFrameCache struct {
 	budget int64
 }
 
-var inlineAnimFrames = newAnimFrameCache(defaultInlineAnimCacheBytes)
+var inlineAnimFrames = newAnimFrameCache(defaultInlineAnimCacheBudget())
+
+func defaultInlineAnimCacheBudget() int64 {
+	return inlineAnimCacheBudgetFromEnv(os.Getenv(inlineAnimCacheEnv))
+}
+
+func inlineAnimCacheBudgetFromEnv(value string) int64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return defaultInlineAnimCacheBytes
+	}
+	mb, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || mb <= 0 {
+		return defaultInlineAnimCacheBytes
+	}
+	if mb > (1<<63-1)/bytesPerMegabyte {
+		return defaultInlineAnimCacheBytes
+	}
+	return mb * bytesPerMegabyte
+}
 
 func newAnimFrameCache(budget int64) *animFrameCache {
 	if budget <= 0 {
@@ -99,6 +125,15 @@ func (c *animFrameCache) stats() AnimCacheStats {
 	}
 }
 
+func (c *animFrameCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.items = make(map[string]*list.Element)
+	c.order.Init()
+	c.bytes = 0
+}
+
 func (c *animFrameCache) removeLocked(key string) {
 	elem, ok := c.items[key]
 	if !ok {
@@ -142,6 +177,11 @@ func estimateFrameBytes(frames []image.Image) int64 {
 
 func InlineAnimCacheStats() AnimCacheStats {
 	return inlineAnimFrames.stats()
+}
+
+// ClearInlineAnimCache drops decoded animation frames without changing the cache budget.
+func ClearInlineAnimCache() {
+	inlineAnimFrames.clear()
 }
 
 func resetInlineAnimCacheForTest(budget int64) {

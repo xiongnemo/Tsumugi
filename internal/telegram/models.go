@@ -11,13 +11,16 @@ type EventKind string
 const ArchiveFolderID = -10
 
 const (
-	EventStatus     EventKind = "status"
-	EventConnected  EventKind = "connected"
-	EventChats      EventKind = "chats"
-	EventMessages   EventKind = "messages"
-	EventReadOutbox EventKind = "read_outbox"
-	EventAuthPrompt EventKind = "auth_prompt"
-	EventError      EventKind = "error"
+	EventStatus                  EventKind = "status"
+	EventConnected               EventKind = "connected"
+	EventChats                   EventKind = "chats"
+	EventMessages                EventKind = "messages"
+	EventReadOutbox              EventKind = "read_outbox"
+	EventAuthPrompt              EventKind = "auth_prompt"
+	EventError                   EventKind = "error"
+	EventMentionSuggestions      EventKind = "mention_suggestions"
+	EventBotCommandSuggestions   EventKind = "bot_command_suggestions"
+	EventInlineResultSuggestions EventKind = "inline_result_suggestions"
 )
 
 type Event struct {
@@ -39,6 +42,15 @@ type Event struct {
 	Patch            bool
 	Auth             *AuthPrompt
 	Background       *BackgroundState
+	RequestID        int64
+	Query            string
+	BotUsername      string
+	Mentions         []MentionSuggestion
+	BotCommands      []BotCommandSuggestion
+	InlineResults    []InlineResultSuggestion
+	NextOffset       string
+	HasMore          bool
+	Placeholder      string
 }
 
 // BackgroundKind identifies low-priority work shown in the status bar right column.
@@ -128,26 +140,68 @@ type FolderRules struct {
 type CommandKind string
 
 const (
-	CommandOpenChat       CommandKind = "open_chat"
-	CommandFocusChat      CommandKind = "focus_chat"
-	CommandSendText       CommandKind = "send_text"
-	CommandRetrySend      CommandKind = "retry_send"
-	CommandLoadOlder      CommandKind = "load_older"
-	CommandFillHistoryGap CommandKind = "fill_history_gap"
-	CommandDeleteMessage  CommandKind = "delete_message"
-	CommandDownloadMedia  CommandKind = "download_media"
-	CommandSendReaction   CommandKind = "send_reaction"
-	CommandMarkViewed     CommandKind = "mark_viewed"
+	CommandOpenChat         CommandKind = "open_chat"
+	CommandFocusChat        CommandKind = "focus_chat"
+	CommandSendText         CommandKind = "send_text"
+	CommandRetrySend        CommandKind = "retry_send"
+	CommandLoadOlder        CommandKind = "load_older"
+	CommandFillHistoryGap   CommandKind = "fill_history_gap"
+	CommandDeleteMessage    CommandKind = "delete_message"
+	CommandDownloadMedia    CommandKind = "download_media"
+	CommandSendReaction     CommandKind = "send_reaction"
+	CommandMarkViewed       CommandKind = "mark_viewed"
+	CommandSearchMentions   CommandKind = "search_mentions"
+	CommandLoadBotCommands  CommandKind = "load_bot_commands"
+	CommandQueryInlineBot   CommandKind = "query_inline_bot"
+	CommandSendInlineResult CommandKind = "send_inline_result"
 )
 
 type Command struct {
-	Kind      CommandKind
-	PeerKey   string
-	Text      string
-	MessageID int
-	ReplyToID int
-	Media     MediaAttachment
-	Reaction  ReactionSummary
+	Kind            CommandKind
+	PeerKey         string
+	Text            string
+	MessageID       int
+	ReplyToID       int
+	Media           MediaAttachment
+	Reaction        ReactionSummary
+	RequestID       int64
+	Query           string
+	BotUsername     string
+	Offset          string
+	QueryID         int64
+	ResultID        string
+	MentionEntities []MessageEntityMentionName
+}
+
+type MentionSuggestion struct {
+	UserID     int64
+	AccessHash int64
+	Name       string
+	Username   string
+	IsBot      bool
+	Source     string
+}
+
+type BotCommandSuggestion struct {
+	Command        string
+	Description    string
+	BotUsername    string
+	NeedsBotSuffix bool
+}
+
+type InlineResultSuggestion struct {
+	ID          string
+	QueryID     int64
+	Title       string
+	Description string
+	Type        string
+}
+
+type MessageEntityMentionName struct {
+	Offset     int
+	Length     int
+	UserID     int64
+	AccessHash int64
 }
 
 type Message struct {

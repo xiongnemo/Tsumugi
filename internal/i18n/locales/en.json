@@ -82,6 +82,7 @@
 
   "ui.footer_mode": "mode: %s",
   "ui.footer_tab_focus": "Tab focus",
+  "ui.footer_backtab_focus": "Shift+Tab previous focus",
   "ui.footer_enter": "Enter open/expand",
   "ui.footer_layout": "L layout",
   "ui.footer_react": "R react",

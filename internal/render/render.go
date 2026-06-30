@@ -332,6 +332,7 @@ func colorizeSender(name string, seed int) string {
 func Footer(mode, version string, proxy network.ProxyConfig) string {
 	parts := []string{
 		i18n.T(i18n.KeyUIFooterTabFocus),
+		i18n.T(i18n.KeyUIFooterBacktabFocus),
 		i18n.T(i18n.KeyUIFooterEnter),
 		i18n.T(i18n.KeyUIFooterLayout),
 		i18n.T(i18n.KeyUIFooterReact),

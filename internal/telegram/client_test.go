@@ -1,7 +1,10 @@
 package telegram
 
 import (
+	"context"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -55,12 +58,12 @@ func TestSortChatsUsesPinnedOrderAmongPinned(t *testing.T) {
 
 func TestMergePeerActivityPreservesPinnedMetadata(t *testing.T) {
 	existing := storage.Peer{
-		Key:              "user:1",
-		Pinned:           true,
-		PinnedOrder:      3,
-		Unread:           5,
-		FolderID:         2,
-		ReadOutboxMaxID:  7,
+		Key:             "user:1",
+		Pinned:          true,
+		PinnedOrder:     3,
+		Unread:          5,
+		FolderID:        2,
+		ReadOutboxMaxID: 7,
 	}
 	activity := storage.Peer{
 		Key:           "user:1",
@@ -191,6 +194,106 @@ func TestPendingMessageCanBeTakenOnce(t *testing.T) {
 	if len(second) != 0 {
 		t.Fatalf("pending was not consumed: %+v", second)
 	}
+}
+
+func TestNormalizeMessageWithoutPreviewDoesNotHydrateRaster(t *testing.T) {
+	calls := installPreviewHydrationSpies(t)
+	mediaDir := t.TempDir()
+	cachedPath := filepath.Join(mediaDir, "document_7.mp4")
+	if err := os.WriteFile(cachedPath, []byte("cached video placeholder"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewGotdClient(config.Config{Paths: config.Paths{MediaDir: mediaDir}}, nil)
+	msg := &tg.Message{
+		ID:   10,
+		Date: 1,
+		Media: &tg.MessageMediaDocument{Document: &tg.Document{
+			ID:       7,
+			MimeType: "video/mp4",
+			Attributes: []tg.DocumentAttributeClass{
+				&tg.DocumentAttributeAnimated{},
+				&tg.DocumentAttributeFilename{FileName: "clip.mp4"},
+			},
+		}},
+	}
+
+	st := client.normalizeTGMessageWithPreview(context.Background(), nil, "acct", "peer:1", msg, entitiesByID{}, false)
+	if *calls != 0 {
+		t.Fatalf("preview hydration was called %d times", *calls)
+	}
+	var media MediaAttachment
+	if err := json.Unmarshal([]byte(st.MediaJSON), &media); err != nil {
+		t.Fatal(err)
+	}
+	if media.LocalPath != cachedPath {
+		t.Fatalf("local path = %q, want %q", media.LocalPath, cachedPath)
+	}
+	if PreviewIsRaster(media.PreviewText) {
+		t.Fatalf("preview=false produced raster preview: %q", media.PreviewText)
+	}
+}
+
+func TestTelegramMessagesDoesNotHydrateRasterFromDisk(t *testing.T) {
+	calls := installPreviewHydrationSpies(t)
+	mediaDir := t.TempDir()
+	cachedPath := filepath.Join(mediaDir, "document_7.mp4")
+	if err := os.WriteFile(cachedPath, []byte("cached video placeholder"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(MediaAttachment{
+		Kind:        "gif",
+		LabelKey:    "media.gif",
+		Label:       "[GIF]",
+		MimeType:    "video/mp4",
+		DownloadKey: "document:7",
+		DocumentID:  7,
+		PreviewText: "[GIF] clip.mp4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewGotdClient(config.Config{Paths: config.Paths{MediaDir: mediaDir}}, nil)
+	msgs := client.telegramMessages(context.Background(), "acct", []storage.Message{{
+		AccountID: "acct",
+		PeerKey:   "peer:1",
+		ID:        10,
+		Date:      time.Unix(1, 0),
+		MediaJSON: string(raw),
+	}})
+	if *calls != 0 {
+		t.Fatalf("preview hydration was called %d times", *calls)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("telegramMessages returned %d messages, want 1", len(msgs))
+	}
+	if msgs[0].Media.LocalPath != cachedPath {
+		t.Fatalf("local path = %q, want %q", msgs[0].Media.LocalPath, cachedPath)
+	}
+	if PreviewIsRaster(msgs[0].Media.PreviewText) {
+		t.Fatalf("telegramMessages produced raster preview: %q", msgs[0].Media.PreviewText)
+	}
+}
+
+func installPreviewHydrationSpies(t *testing.T) *int {
+	t.Helper()
+	oldRender := renderMediaPreview
+	oldStill := renderVideoStillPreview
+	calls := 0
+	renderMediaPreview = func(path string) string {
+		calls++
+		return ""
+	}
+	renderVideoStillPreview = func(path string, maxCols, maxRows int) string {
+		calls++
+		return ""
+	}
+	t.Cleanup(func() {
+		renderMediaPreview = oldRender
+		renderVideoStillPreview = oldStill
+	})
+	return &calls
 }
 
 func TestPendingMessageDuplicateTextIsFIFO(t *testing.T) {
