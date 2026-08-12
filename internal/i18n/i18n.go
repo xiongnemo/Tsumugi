@@ -1,6 +1,7 @@
 package i18n
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -39,6 +40,23 @@ func T(key string) string {
 		return value
 	}
 	return key
+}
+
+// PreviewText renders a stored chat-list preview from its key and optional argument.
+// Templates containing %s are formatted; otherwise a non-empty argument is appended
+// after a space, which is how sticker previews carry their alt emoji.
+func PreviewText(key, arg string) string {
+	if key == "" {
+		return ""
+	}
+	template := T(key)
+	if arg == "" {
+		return template
+	}
+	if strings.Contains(template, "%s") {
+		return fmt.Sprintf(template, arg)
+	}
+	return template + " " + arg
 }
 
 func MediaLabel(labelKey, kind string) string {

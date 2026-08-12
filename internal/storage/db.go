@@ -187,6 +187,8 @@ func (db *DB) migrate(ctx context.Context) error {
 		{"peers", "history_min_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"peers", "history_loaded_until", "TEXT NOT NULL DEFAULT ''"},
 		{"peers", "thumb_cache_key", "TEXT NOT NULL DEFAULT ''"},
+		{"peers", "last_preview_key", "TEXT NOT NULL DEFAULT ''"},
+		{"peers", "last_preview_arg", "TEXT NOT NULL DEFAULT ''"},
 		{"messages", "sender_kind", "TEXT NOT NULL DEFAULT ''"},
 		{"messages", "sender_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"messages", "sender_name", "TEXT NOT NULL DEFAULT ''"},
@@ -283,9 +285,10 @@ func (db *DB) SavePeers(ctx context.Context, peers []Peer) error {
 			INSERT INTO peers(
 				account_id, key, kind, telegram_id, access_hash, title, username, subtitle, contact, last_preview,
 				last_message_at, top_message_id, folder_id, folder_title, pinned, pinned_order, unread,
-				read_outbox_max_id, history_min_id, history_loaded_until, thumb_cache_key, updated_at
+				read_outbox_max_id, history_min_id, history_loaded_until, thumb_cache_key, updated_at,
+				last_preview_key, last_preview_arg
 			)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(account_id, key) DO UPDATE SET
 				kind = excluded.kind,
 				telegram_id = excluded.telegram_id,
@@ -310,10 +313,13 @@ func (db *DB) SavePeers(ctx context.Context, peers []Peer) error {
 				history_min_id = CASE WHEN excluded.history_min_id != 0 THEN excluded.history_min_id ELSE peers.history_min_id END,
 				history_loaded_until = CASE WHEN excluded.history_loaded_until != '' THEN excluded.history_loaded_until ELSE peers.history_loaded_until END,
 				thumb_cache_key = excluded.thumb_cache_key,
+				last_preview_key = excluded.last_preview_key,
+				last_preview_arg = excluded.last_preview_arg,
 				updated_at = excluded.updated_at
 		`, peer.AccountID, peer.Key, peer.Kind, peer.ID, peer.AccessHash, peer.Title, peer.Username, peer.Subtitle, boolInt(peer.Contact), peer.LastPreview,
 			nullableTime(peer.LastMessageAt), peer.TopMessageID, peer.FolderID, peer.FolderTitle, boolInt(peer.Pinned), peer.PinnedOrder, peer.Unread,
-			peer.ReadOutboxMaxID, peer.HistoryMinID, nullableTime(peer.HistoryLoadedUntil), peer.ThumbCacheKey, formatTime(peer.UpdatedAt)); err != nil {
+			peer.ReadOutboxMaxID, peer.HistoryMinID, nullableTime(peer.HistoryLoadedUntil), peer.ThumbCacheKey, formatTime(peer.UpdatedAt),
+			peer.LastPreviewKey, peer.LastPreviewArg); err != nil {
 			return err
 		}
 	}
@@ -324,7 +330,7 @@ func (db *DB) ListPeers(ctx context.Context, accountID string) ([]Peer, error) {
 	rows, err := db.sql.QueryContext(ctx, `
 		SELECT key, kind, telegram_id, access_hash, title, username, subtitle, contact, last_preview, last_message_at,
 			top_message_id, folder_id, folder_title, pinned, pinned_order, unread, read_outbox_max_id, history_min_id,
-			history_loaded_until, thumb_cache_key, updated_at
+			history_loaded_until, thumb_cache_key, updated_at, last_preview_key, last_preview_arg
 		FROM peers WHERE account_id = ?
 		ORDER BY pinned DESC, pinned_order ASC, last_message_at DESC, top_message_id DESC, title COLLATE NOCASE
 	`, accountID)
@@ -341,7 +347,7 @@ func (db *DB) ListPeers(ctx context.Context, accountID string) ([]Peer, error) {
 		p.AccountID = accountID
 		if err := rows.Scan(&p.Key, &p.Kind, &p.ID, &p.AccessHash, &p.Title, &p.Username, &p.Subtitle, &contact, &p.LastPreview, &lastMessageAt,
 			&p.TopMessageID, &p.FolderID, &p.FolderTitle, &pinned, &p.PinnedOrder, &p.Unread, &p.ReadOutboxMaxID, &p.HistoryMinID,
-			&historyLoadedUntil, &p.ThumbCacheKey, &updated); err != nil {
+			&historyLoadedUntil, &p.ThumbCacheKey, &updated, &p.LastPreviewKey, &p.LastPreviewArg); err != nil {
 			return nil, err
 		}
 		p.Pinned = pinned != 0
@@ -361,11 +367,11 @@ func (db *DB) Peer(ctx context.Context, accountID, key string) (Peer, bool, erro
 	err := db.sql.QueryRowContext(ctx, `
 		SELECT kind, telegram_id, access_hash, title, username, subtitle, contact, last_preview, last_message_at,
 			top_message_id, folder_id, folder_title, pinned, pinned_order, unread, read_outbox_max_id, history_min_id,
-			history_loaded_until, thumb_cache_key, updated_at
+			history_loaded_until, thumb_cache_key, updated_at, last_preview_key, last_preview_arg
 		FROM peers WHERE account_id = ? AND key = ?
 	`, accountID, key).Scan(&p.Kind, &p.ID, &p.AccessHash, &p.Title, &p.Username, &p.Subtitle, &contact, &p.LastPreview, &lastMessageAt,
 		&p.TopMessageID, &p.FolderID, &p.FolderTitle, &pinned, &p.PinnedOrder, &p.Unread, &p.ReadOutboxMaxID, &p.HistoryMinID,
-		&historyLoadedUntil, &p.ThumbCacheKey, &updated)
+		&historyLoadedUntil, &p.ThumbCacheKey, &updated, &p.LastPreviewKey, &p.LastPreviewArg)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Peer{}, false, nil
 	}

@@ -62,6 +62,14 @@ func (a *App) refreshWelcomeChatRow() {
 func localizedChatDisplay(chat telegram.Chat) telegram.Chat {
 	out := chat
 	out.Subtitle = i18n.ChatKind(chat.Subtitle)
+	if chat.PreviewKey != "" {
+		// Generated preview (media placeholder, empty marker, service message): rebuild
+		// it from the stored key so the locale switch is exact.
+		out.LastPreview = i18n.PreviewText(chat.PreviewKey, chat.PreviewArg)
+		return out
+	}
+	// Rows saved before preview keys existed still fall back to reverse lookup; rows with
+	// user-authored text are returned untouched by LocalizeKnown.
 	out.LastPreview = i18n.LocalizeKnown(chat.LastPreview)
 	return out
 }

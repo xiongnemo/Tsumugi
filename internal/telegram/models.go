@@ -103,16 +103,20 @@ type Self struct {
 }
 
 type Chat struct {
-	ID            string
-	Title         string
-	Subtitle      string
-	Kind          string
-	Contact       bool
-	FolderID      int
-	Pinned        bool
-	PinnedOrder   int
-	Unread        int
-	LastPreview   string
+	ID          string
+	Title       string
+	Subtitle    string
+	Kind        string
+	Contact     bool
+	FolderID    int
+	Pinned      bool
+	PinnedOrder int
+	Unread      int
+	LastPreview string
+	// PreviewKey/PreviewArg regenerate LastPreview when the locale changes. Empty for
+	// user-authored message text.
+	PreviewKey    string
+	PreviewArg    string
 	LastMessageAt time.Time
 	TopMessageID  int
 }

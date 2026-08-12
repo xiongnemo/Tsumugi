@@ -16,16 +16,21 @@ type Account struct {
 }
 
 type Peer struct {
-	Key                string
-	AccountID          string
-	Kind               string
-	ID                 int64
-	AccessHash         int64
-	Title              string
-	Username           string
-	Subtitle           string
-	Contact            bool
-	LastPreview        string
+	Key         string
+	AccountID   string
+	Kind        string
+	ID          int64
+	AccessHash  int64
+	Title       string
+	Username    string
+	Subtitle    string
+	Contact     bool
+	LastPreview string
+	// LastPreviewKey is an i18n key when the preview is generated text (a media
+	// placeholder, an empty-message marker, or a service message). It is empty when
+	// LastPreview holds user-authored message text, which is never translated.
+	LastPreviewKey     string
+	LastPreviewArg     string
 	LastMessageAt      time.Time
 	TopMessageID       int
 	FolderID           int

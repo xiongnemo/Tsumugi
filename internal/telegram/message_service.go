@@ -221,7 +221,7 @@ func (c *GotdClient) normalizeUpdateServiceMessage(ctx context.Context, accountI
 		return storage.Peer{}, storage.Message{}, false
 	}
 	p.LastMessageAt = stMsg.Date
-	p.LastPreview = serviceMessagePreview(msg, entities)
+	serviceMessagePreview(msg, entities).applyTo(&p)
 	p.TopMessageID = msg.ID
 	p.UpdatedAt = time.Now().UTC()
 	if c.store != nil {
@@ -246,9 +246,13 @@ func serviceMessagePeer(msg *tg.MessageService) tg.PeerClass {
 }
 
 // serviceMessagePreview renders the chat-list preview for a service message.
-func serviceMessagePreview(msg *tg.MessageService, entities entitiesByID) string {
+func serviceMessagePreview(msg *tg.MessageService, entities entitiesByID) peerPreview {
 	if msg == nil {
-		return ""
+		return peerPreview{}
 	}
-	return classifyMessageAction(msg.Action, entities).Msg().String()
+	action := classifyMessageAction(msg.Action, entities)
+	if action.Key == "" {
+		return peerPreview{}
+	}
+	return peerPreview{Text: action.Msg().String(), Key: action.Key, Arg: action.Arg}
 }

@@ -293,3 +293,37 @@ func TestServiceMessageRoundTrip(t *testing.T) {
 		t.Fatalf("ordinary row picked up service fields: %q/%q", got.ServiceKey, got.ServiceArg)
 	}
 }
+
+func TestPeerPreviewKeyRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+
+	if err := db.SavePeers(ctx, []Peer{{
+		AccountID:      "user:1",
+		Key:            "chat:3",
+		Kind:           "chat",
+		ID:             3,
+		Title:          "Nemo",
+		LastPreview:    "added Ada",
+		LastPreviewKey: "service.users_added",
+		LastPreviewArg: "Ada",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	peer, ok, err := db.Peer(ctx, "user:1", "chat:3")
+	if err != nil || !ok {
+		t.Fatalf("Peer: %v ok=%v", err, ok)
+	}
+	if peer.LastPreviewKey != "service.users_added" || peer.LastPreviewArg != "Ada" {
+		t.Fatalf("peer preview = %q/%q", peer.LastPreviewKey, peer.LastPreviewArg)
+	}
+
+	peers, err := db.ListPeers(ctx, "user:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != 1 || peers[0].LastPreviewKey != "service.users_added" {
+		t.Fatalf("ListPeers = %+v", peers)
+	}
+}

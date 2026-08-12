@@ -56,8 +56,41 @@ func TestClassifyDocumentVoiceAndAudio(t *testing.T) {
 func TestMessagePreviewUsesPollLabel(t *testing.T) {
 	i18n.SetLocale("en")
 	msg := &tg.Message{Media: &tg.MessageMediaPoll{}}
-	if got := messagePreview(msg); got != "[Poll]" {
-		t.Fatalf("preview = %q, want [Poll]", got)
+	got := messagePreview(msg)
+	if got.Text != "[Poll]" {
+		t.Fatalf("preview = %q, want [Poll]", got.Text)
+	}
+	// The key is persisted so a locale switch re-renders without reverse lookup.
+	if got.Key != i18n.KeyMediaPoll {
+		t.Fatalf("preview key = %q, want %q", got.Key, i18n.KeyMediaPoll)
+	}
+}
+
+func TestMessagePreviewKeepsUserTextUnkeyed(t *testing.T) {
+	i18n.SetLocale("en")
+	got := messagePreview(&tg.Message{Message: "[Poll]"})
+	if got.Text != "[Poll]" {
+		t.Fatalf("preview = %q", got.Text)
+	}
+	// A user who literally types "[Poll]" must not have it translated on locale switch.
+	if got.Key != "" {
+		t.Fatalf("preview key = %q, want empty for user text", got.Key)
+	}
+}
+
+func TestMessagePreviewCarriesStickerAlt(t *testing.T) {
+	i18n.SetLocale("en")
+	got := messagePreview(&tg.Message{Media: &tg.MessageMediaDocument{
+		Document: &tg.Document{
+			MimeType:   "image/webp",
+			Attributes: []tg.DocumentAttributeClass{&tg.DocumentAttributeSticker{Alt: "😀"}},
+		},
+	}})
+	if got.Key != i18n.KeyMediaSticker || got.Arg != "😀" {
+		t.Fatalf("preview = %+v, want sticker key with alt arg", got)
+	}
+	if rendered := i18n.PreviewText(got.Key, got.Arg); rendered != got.Text {
+		t.Fatalf("PreviewText = %q, want %q", rendered, got.Text)
 	}
 }
 

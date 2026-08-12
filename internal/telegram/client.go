@@ -947,11 +947,11 @@ func normalizeDialog(accountID string, item tg.DialogClass, messageByID map[int]
 	switch last := messageByID[d.TopMessage].(type) {
 	case *tg.Message:
 		p.LastMessageAt = time.Unix(int64(last.Date), 0).UTC()
-		p.LastPreview = messagePreview(last)
+		messagePreview(last).applyTo(&p)
 		p.ThumbCacheKey = thumbCacheKey(last)
 	case *tg.MessageService:
 		p.LastMessageAt = time.Unix(int64(last.Date), 0).UTC()
-		p.LastPreview = serviceMessagePreview(last, entities)
+		serviceMessagePreview(last, entities).applyTo(&p)
 	}
 	p.TopMessageID = d.TopMessage
 	p.Unread = d.UnreadCount
@@ -977,6 +977,8 @@ func normalizeDialog(accountID string, item tg.DialogClass, messageByID map[int]
 		PinnedOrder:   p.PinnedOrder,
 		Unread:        p.Unread,
 		LastPreview:   p.LastPreview,
+		PreviewKey:    p.LastPreviewKey,
+		PreviewArg:    p.LastPreviewArg,
 		LastMessageAt: p.LastMessageAt,
 		TopMessageID:  p.TopMessageID,
 	}
@@ -1043,7 +1045,7 @@ func (c *GotdClient) normalizeUpdateMessage(ctx context.Context, api *tg.Client,
 		return storage.Peer{}, storage.Message{}, false
 	}
 	p.LastMessageAt = time.Unix(int64(msg.Date), 0).UTC()
-	p.LastPreview = messagePreview(msg)
+	messagePreview(msg).applyTo(&p)
 	p.TopMessageID = msg.ID
 	p.ThumbCacheKey = thumbCacheKey(msg)
 	p.UpdatedAt = time.Now().UTC()
@@ -2313,17 +2315,32 @@ func bestPhotoSize(sizes []tg.PhotoSizeClass) string {
 	return bestType
 }
 
-func messagePreview(msg *tg.Message) string {
+// peerPreview is the chat-list preview for a message. Key is empty when Text is
+// user-authored message text, which is never translated; otherwise Key/Arg regenerate
+// Text on a locale change so the list does not need reverse string lookup.
+type peerPreview struct {
+	Text string
+	Key  string
+	Arg  string
+}
+
+func (p peerPreview) applyTo(peer *storage.Peer) {
+	peer.LastPreview = p.Text
+	peer.LastPreviewKey = p.Key
+	peer.LastPreviewArg = p.Arg
+}
+
+func messagePreview(msg *tg.Message) peerPreview {
 	if msg == nil {
-		return ""
+		return peerPreview{}
 	}
 	if msg.Message != "" {
-		return msg.Message
+		return peerPreview{Text: msg.Message}
 	}
 	if media := classifyMessageMedia(msg.Media); media.Label != "" {
-		return media.Label
+		return peerPreview{Text: media.Label, Key: media.LabelKey, Arg: media.Alt}
 	}
-	return i18n.T(i18n.KeyMessageEmpty)
+	return peerPreview{Text: i18n.T(i18n.KeyMessageEmpty), Key: i18n.KeyMessageEmpty}
 }
 
 func thumbCacheKey(msg *tg.Message) string {
@@ -2439,6 +2456,8 @@ func peersToChats(peers []storage.Peer) []Chat {
 			PinnedOrder:   p.PinnedOrder,
 			Unread:        p.Unread,
 			LastPreview:   p.LastPreview,
+			PreviewKey:    p.LastPreviewKey,
+			PreviewArg:    p.LastPreviewArg,
 			LastMessageAt: p.LastMessageAt,
 			TopMessageID:  p.TopMessageID,
 		})
