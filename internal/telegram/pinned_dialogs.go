@@ -20,9 +20,12 @@ func (c *GotdClient) syncPinnedDialogs(ctx context.Context, accountID string, ap
 		return
 	}
 	entities := dialogEntities(res.GetUsers(), res.GetChats())
-	messageByID := make(map[int]*tg.Message)
+	messageByID := make(map[int]tg.MessageClass)
 	for _, item := range res.GetMessages() {
-		if msg, ok := item.(*tg.Message); ok {
+		switch msg := item.(type) {
+		case *tg.Message:
+			messageByID[msg.ID] = msg
+		case *tg.MessageService:
 			messageByID[msg.ID] = msg
 		}
 	}

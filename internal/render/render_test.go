@@ -389,3 +389,41 @@ func TestChatRowUsesDisplayWidthForCJKEmoji(t *testing.T) {
 		t.Fatalf("ChatRow contains replacement rune: %q", got)
 	}
 }
+
+func TestServiceLineRendersSystemMessage(t *testing.T) {
+	msg := telegram.Message{
+		ID:         "512",
+		Author:     "Nemo",
+		CreatedAt:  time.Date(2026, 8, 12, 19, 14, 0, 0, time.UTC),
+		ServiceKey: "service.pinned_message",
+	}
+	line := ServiceLine(msg, 80)
+	if !strings.Contains(line, "Nemo") || !strings.Contains(line, "pinned a message") {
+		t.Fatalf("service line = %q", line)
+	}
+	if !strings.HasPrefix(line, "[gray]") {
+		t.Fatalf("service line should be dim, got %q", line)
+	}
+
+	// A service message replaces the whole row: no sender/body/meta layout.
+	lines := MessageRowLines(msg, 80, DefaultMessageRowOpts())
+	if len(lines) != 1 || lines[0] != line {
+		t.Fatalf("MessageRowLines = %#v, want single service line", lines)
+	}
+}
+
+func TestServiceLineWithArgument(t *testing.T) {
+	line := ServiceLine(telegram.Message{
+		ServiceKey: "service.users_added",
+		ServiceArg: "Ada Lovelace",
+	}, 80)
+	if !strings.Contains(line, "added Ada Lovelace") {
+		t.Fatalf("service line = %q", line)
+	}
+}
+
+func TestServiceLineEmptyForOrdinaryMessage(t *testing.T) {
+	if got := ServiceLine(telegram.Message{Text: "hello"}, 80); got != "" {
+		t.Fatalf("ServiceLine = %q, want empty", got)
+	}
+}

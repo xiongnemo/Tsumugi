@@ -250,3 +250,46 @@ func TestProxyProfilesRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected profiles: %+v", profiles)
 	}
 }
+
+func TestServiceMessageRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+
+	if err := db.SaveMessages(ctx, []Message{{
+		AccountID:  "user:1",
+		PeerKey:    "chat:3",
+		ID:         512,
+		Date:       time.Now().UTC(),
+		State:      "synced",
+		ServiceKey: "service.users_added",
+		ServiceArg: "Ada Lovelace",
+	}, {
+		AccountID: "user:1",
+		PeerKey:   "chat:3",
+		ID:        513,
+		Date:      time.Now().UTC(),
+		State:     "synced",
+		Text:      "ordinary",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	messages, err := db.MessagesForPeer(ctx, "user:1", "chat:3", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("got %d messages, want 2", len(messages))
+	}
+
+	byID := map[int]Message{}
+	for _, m := range messages {
+		byID[m.ID] = m
+	}
+	if got := byID[512]; got.ServiceKey != "service.users_added" || got.ServiceArg != "Ada Lovelace" {
+		t.Fatalf("service row = %q/%q", got.ServiceKey, got.ServiceArg)
+	}
+	if got := byID[513]; got.ServiceKey != "" || got.ServiceArg != "" {
+		t.Fatalf("ordinary row picked up service fields: %q/%q", got.ServiceKey, got.ServiceArg)
+	}
+}

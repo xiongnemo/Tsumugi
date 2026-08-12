@@ -61,6 +61,10 @@ type Message struct {
 	Forwards       int
 	ReactionsJSON  string
 	ViaBotUsername string
+	// ServiceKey is an i18n key when this row is a Telegram service (system) message,
+	// empty for ordinary messages. ServiceArg is its single template argument.
+	ServiceKey string
+	ServiceArg string
 }
 
 type DialogFilter struct {

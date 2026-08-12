@@ -226,6 +226,10 @@ type Message struct {
 	Reactions      []ReactionSummary
 	RecentReact    []ReactionPeer
 	ViaBotUsername string
+	// ServiceKey is an i18n key when this is a Telegram service (system) message.
+	// The UI renders it as a dim system line instead of a normal message row.
+	ServiceKey string
+	ServiceArg string
 }
 
 type MediaAttachment struct {

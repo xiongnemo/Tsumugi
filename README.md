@@ -24,6 +24,11 @@ share the same Telegram API adapter after authentication.
 - Global pinned chats in the **All** folder (Saved Messages and other main-list
   pins), synced from Telegram and shown at the top of the chat list with a pin
   marker.
+- Telegram service (system) messages — joins and leaves, title/photo changes,
+  pins, history clears, calls, auto-delete timers and so on — rendered inline as
+  dim single-line entries and shown in chat-list previews. Actions Tsumugi has no
+  dedicated wording for still appear as a generic system message rather than
+  silently disappearing.
 - First-run onboarding wizard for language, Telegram login mode, API
   credentials, and phone/bot token setup when credentials are incomplete.
 - Proxy support for SOCKS5, HTTP CONNECT, and Telegram MTProxy.

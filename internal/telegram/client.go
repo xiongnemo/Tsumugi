@@ -265,9 +265,12 @@ func (c *GotdClient) loadDialogBatch(ctx context.Context, accountID string, api 
 		return nil, nil, storage.Peer{}, 0, 0, nil
 	}
 	entities := dialogEntities(modified.GetUsers(), modified.GetChats())
-	messageByID := make(map[int]*tg.Message)
+	messageByID := make(map[int]tg.MessageClass)
 	for _, item := range modified.GetMessages() {
-		if msg, ok := item.(*tg.Message); ok {
+		switch msg := item.(type) {
+		case *tg.Message:
+			messageByID[msg.ID] = msg
+		case *tg.MessageService:
 			messageByID[msg.ID] = msg
 		}
 	}
@@ -670,25 +673,61 @@ func (c *GotdClient) registerUpdateHandlers(dispatcher *tg.UpdateDispatcher, acc
 		return nil
 	}
 
-	dispatcher.OnNewMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewMessage) error {
-		msg, ok := update.Message.(*tg.Message)
+	// Service messages carry no text or media, so they skip pending-send matching and
+	// read-mark refresh; they only need to reach storage and the viewport.
+	handleService := func(ctx context.Context, e tg.Entities, msg *tg.MessageService, statusKey string) error {
+		if accountID == nil || *accountID == "" || msg == nil {
+			return nil
+		}
+		peer, stMsg, ok := c.normalizeUpdateServiceMessage(ctx, *accountID, msg, e)
 		if !ok {
 			return nil
 		}
+		if c.store != nil {
+			if err := c.store.SavePeers(ctx, []storage.Peer{peer}); err != nil {
+				return err
+			}
+			if err := c.store.SaveMessages(ctx, []storage.Message{stMsg}); err != nil {
+				return err
+			}
+			chats, err := c.store.ListPeers(ctx, *accountID)
+			if err == nil {
+				sendEvent(ctx, events, Event{Kind: EventChats, Chats: peersToChats(chats)})
+			}
+		}
+		sendEvent(ctx, events, Event{
+			Kind:      EventMessages,
+			PeerKey:   stMsg.PeerKey,
+			Messages:  c.telegramMessages(ctx, *accountID, []storage.Message{stMsg}),
+			Append:    true,
+			StatusMsg: i18n.M(statusKey),
+		})
+		return nil
+	}
+
+	dispatcher.OnNewMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewMessage) error {
 		if accountID != nil {
 			c.saveUpdateState(ctx, events, storage.UpdateState{AccountID: *accountID, Pts: update.Pts})
 		}
-		return handle(ctx, e, msg, i18n.KeyStatusNewMessage)
+		switch msg := update.Message.(type) {
+		case *tg.Message:
+			return handle(ctx, e, msg, i18n.KeyStatusNewMessage)
+		case *tg.MessageService:
+			return handleService(ctx, e, msg, i18n.KeyStatusNewMessage)
+		}
+		return nil
 	})
 	dispatcher.OnNewChannelMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewChannelMessage) error {
-		msg, ok := update.Message.(*tg.Message)
-		if !ok {
-			return nil
-		}
 		if accountID != nil {
 			c.saveUpdateState(ctx, events, storage.UpdateState{AccountID: *accountID, Pts: update.Pts})
 		}
-		return handle(ctx, e, msg, i18n.KeyStatusNewChannelMessage)
+		switch msg := update.Message.(type) {
+		case *tg.Message:
+			return handle(ctx, e, msg, i18n.KeyStatusNewChannelMessage)
+		case *tg.MessageService:
+			return handleService(ctx, e, msg, i18n.KeyStatusNewChannelMessage)
+		}
+		return nil
 	})
 	dispatcher.OnEditMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateEditMessage) error {
 		msg, ok := update.Message.(*tg.Message)
@@ -896,7 +935,7 @@ func dialogEntities(users []tg.UserClass, chats []tg.ChatClass) entitiesByID {
 	return e
 }
 
-func normalizeDialog(accountID string, item tg.DialogClass, messageByID map[int]*tg.Message, entities entitiesByID, index int) (storage.Peer, Chat, bool) {
+func normalizeDialog(accountID string, item tg.DialogClass, messageByID map[int]tg.MessageClass, entities entitiesByID, index int) (storage.Peer, Chat, bool) {
 	d, ok := item.(*tg.Dialog)
 	if !ok {
 		return storage.Peer{}, Chat{}, false
@@ -905,11 +944,14 @@ func normalizeDialog(accountID string, item tg.DialogClass, messageByID map[int]
 	if !ok {
 		return storage.Peer{}, Chat{}, false
 	}
-	last := messageByID[d.TopMessage]
-	if last != nil {
+	switch last := messageByID[d.TopMessage].(type) {
+	case *tg.Message:
 		p.LastMessageAt = time.Unix(int64(last.Date), 0).UTC()
 		p.LastPreview = messagePreview(last)
 		p.ThumbCacheKey = thumbCacheKey(last)
+	case *tg.MessageService:
+		p.LastMessageAt = time.Unix(int64(last.Date), 0).UTC()
+		p.LastPreview = serviceMessagePreview(last, entities)
 	}
 	p.TopMessageID = d.TopMessage
 	p.Unread = d.UnreadCount
@@ -1685,13 +1727,9 @@ func (c *GotdClient) messagesFromSendUpdates(ctx context.Context, api *tg.Client
 		for _, update := range u.Updates {
 			switch item := update.(type) {
 			case *tg.UpdateNewMessage:
-				if msg, ok := item.Message.(*tg.Message); ok {
-					out = append(out, c.normalizeTGMessage(ctx, api, accountID, peerKey, msg, entities))
-				}
+				out = append(out, c.normalizeUpdateMessageClass(ctx, api, accountID, peerKey, item.Message, entities)...)
 			case *tg.UpdateNewChannelMessage:
-				if msg, ok := item.Message.(*tg.Message); ok {
-					out = append(out, c.normalizeTGMessage(ctx, api, accountID, peerKey, msg, entities))
-				}
+				out = append(out, c.normalizeUpdateMessageClass(ctx, api, accountID, peerKey, item.Message, entities)...)
 			}
 		}
 	case *tg.UpdatesCombined:
@@ -1699,13 +1737,9 @@ func (c *GotdClient) messagesFromSendUpdates(ctx context.Context, api *tg.Client
 		for _, update := range u.Updates {
 			switch item := update.(type) {
 			case *tg.UpdateNewMessage:
-				if msg, ok := item.Message.(*tg.Message); ok {
-					out = append(out, c.normalizeTGMessage(ctx, api, accountID, peerKey, msg, entities))
-				}
+				out = append(out, c.normalizeUpdateMessageClass(ctx, api, accountID, peerKey, item.Message, entities)...)
 			case *tg.UpdateNewChannelMessage:
-				if msg, ok := item.Message.(*tg.Message); ok {
-					out = append(out, c.normalizeTGMessage(ctx, api, accountID, peerKey, msg, entities))
-				}
+				out = append(out, c.normalizeUpdateMessageClass(ctx, api, accountID, peerKey, item.Message, entities)...)
 			}
 		}
 	}
@@ -1813,11 +1847,14 @@ func (c *GotdClient) normalizeMessagesWithPreview(ctx context.Context, api *tg.C
 	entities := dialogEntities(modified.GetUsers(), modified.GetChats())
 	out := make([]storage.Message, 0, len(modified.GetMessages()))
 	for _, item := range modified.GetMessages() {
-		msg, ok := item.(*tg.Message)
-		if !ok {
-			continue
+		switch msg := item.(type) {
+		case *tg.Message:
+			out = append(out, c.normalizeTGMessageWithPreview(ctx, api, accountID, peerKey, msg, entities, preview))
+		case *tg.MessageService:
+			if stMsg, ok := c.normalizeTGServiceMessage(accountID, peerKey, msg, entities); ok {
+				out = append(out, stMsg)
+			}
 		}
-		out = append(out, c.normalizeTGMessageWithPreview(ctx, api, accountID, peerKey, msg, entities, preview))
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Date.Equal(out[j].Date) {
@@ -1826,6 +1863,21 @@ func (c *GotdClient) normalizeMessagesWithPreview(ctx context.Context, api *tg.C
 		return out[i].Date.Before(out[j].Date)
 	})
 	return out
+}
+
+// normalizeUpdateMessageClass converts a message carried by an update into storage rows,
+// covering both regular and service messages. Service messages occupy real message IDs, so
+// dropping them would leave gaps that the history gap detector then tries to refill forever.
+func (c *GotdClient) normalizeUpdateMessageClass(ctx context.Context, api *tg.Client, accountID, peerKey string, item tg.MessageClass, entities entitiesByID) []storage.Message {
+	switch msg := item.(type) {
+	case *tg.Message:
+		return []storage.Message{c.normalizeTGMessage(ctx, api, accountID, peerKey, msg, entities)}
+	case *tg.MessageService:
+		if stMsg, ok := c.normalizeTGServiceMessage(accountID, peerKey, msg, entities); ok {
+			return []storage.Message{stMsg}
+		}
+	}
+	return nil
 }
 
 func toTelegramMessages(messages []storage.Message) []Message {
@@ -1863,6 +1915,8 @@ func toTelegramMessages(messages []storage.Message) []Message {
 			Forwards:       msg.Forwards,
 			Reactions:      ReactionsFromJSON(msg.ReactionsJSON),
 			ViaBotUsername: msg.ViaBotUsername,
+			ServiceKey:     msg.ServiceKey,
+			ServiceArg:     msg.ServiceArg,
 		})
 	}
 	return out

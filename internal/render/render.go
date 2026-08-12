@@ -84,6 +84,9 @@ func MessageRowWithOpts(message telegram.Message, width int, opts MessageRowOpts
 // MessageRowLines renders a message as display lines. The first line is the
 // sender/time header; body, reactions, and media previews follow on new lines.
 func MessageRowLines(message telegram.Message, width int, opts MessageRowOpts) []string {
+	if line := ServiceLine(message, width); line != "" {
+		return []string{line}
+	}
 	header := strings.TrimRight(messageRowMeta(message, opts), " ")
 	if message.State == "deleted" {
 		lines := []string{Truncate(header, width)}
@@ -167,6 +170,27 @@ func outgoingPrefix(message telegram.Message, opts MessageRowOpts) string {
 		return ">"
 	}
 	return " "
+}
+
+// ServiceLine renders a Telegram service (system) message as a single dim line, e.g.
+// "19:14  Nemo pinned a message". Returns "" for ordinary messages.
+func ServiceLine(message telegram.Message, width int) string {
+	if message.ServiceKey == "" {
+		return ""
+	}
+	text := i18n.T(message.ServiceKey)
+	if message.ServiceArg != "" {
+		text = i18n.Tf(message.ServiceKey, message.ServiceArg)
+	}
+	parts := make([]string, 0, 3)
+	if !message.CreatedAt.IsZero() {
+		parts = append(parts, messageRowTime(message.CreatedAt))
+	}
+	if message.Author != "" {
+		parts = append(parts, message.Author)
+	}
+	parts = append(parts, text)
+	return Truncate("[gray]"+strings.Join(parts, " ")+"[-]", width)
 }
 
 func messageViaBotLine(username string, width int) string {
