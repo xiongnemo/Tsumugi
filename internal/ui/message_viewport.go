@@ -42,6 +42,7 @@ type MessageViewport struct {
 	layoutDirty              bool
 	skipInlineAnimNextLayout bool
 	layoutRelayoutBusy       bool
+	pinnedBanner             string
 }
 
 type messageBlock struct {
@@ -66,6 +67,25 @@ func NewMessageViewport() *MessageViewport {
 		selected:     -1,
 		messageLimit: defaultMessageViewportLimit,
 	}
+}
+
+func (v *MessageViewport) SetPinnedBanner(text string) {
+	v.pinnedBanner = strings.TrimSpace(text)
+}
+
+func (v *MessageViewport) pinnedBannerLines() int {
+	if v.pinnedBanner == "" {
+		return 0
+	}
+	return 1
+}
+
+func (v *MessageViewport) messageAreaHeight(innerHeight int) int {
+	h := innerHeight - v.pinnedBannerLines()
+	if h < 1 {
+		return 1
+	}
+	return h
 }
 
 func (v *MessageViewport) SetInlineAnim(enabled bool) {
@@ -541,13 +561,20 @@ func (v *MessageViewport) Draw(screen tcell.Screen) {
 	if width <= 0 || height <= 0 {
 		return
 	}
+	bannerLines := v.pinnedBannerLines()
+	msgY := y + bannerLines
+	msgHeight := v.messageAreaHeight(height)
+	if bannerLines > 0 {
+		line := render.Truncate("📌 "+v.pinnedBanner, width)
+		tview.Print(screen, line, x, y, width, tview.AlignLeft, tcell.ColorYellow)
+	}
 	if len(v.messages) == 0 {
-		v.drawPlaceholder(screen, x, y, width, height)
+		v.drawPlaceholder(screen, x, msgY, width, msgHeight)
 		return
 	}
 	v.layout(width)
 	totalHeight := v.totalHeight()
-	maxScroll := maxInt(0, totalHeight-height)
+	maxScroll := maxInt(0, totalHeight-msgHeight)
 	if v.followEnd {
 		v.scroll = maxScroll
 		v.followEnd = false
@@ -555,7 +582,7 @@ func (v *MessageViewport) Draw(screen tcell.Screen) {
 	if maxScroll <= 0 || v.scroll >= maxScroll-1 {
 		v.pendingBelow = 0
 	}
-	v.ensureSelectedVisibleWithoutRelayout(height)
+	v.ensureSelectedVisibleWithoutRelayout(msgHeight)
 	if v.scroll > maxScroll {
 		v.scroll = maxScroll
 	}
@@ -568,8 +595,8 @@ func (v *MessageViewport) Draw(screen tcell.Screen) {
 	for blockIndex, block := range v.blocks {
 		for lineIndex, line := range block.lines {
 			absoluteY := block.offset + lineIndex
-			screenY := y + absoluteY - v.scroll
-			if screenY < y || screenY >= y+height {
+			screenY := msgY + absoluteY - v.scroll
+			if screenY < msgY || screenY >= msgY+msgHeight {
 				continue
 			}
 			selected := blockIndex == v.selected
@@ -968,8 +995,9 @@ func (v *MessageViewport) ensureSelectedVisible() {
 	if height <= 0 {
 		return
 	}
+	msgHeight := v.messageAreaHeight(height)
 	v.layout(width)
-	v.ensureSelectedVisibleWithoutRelayout(height)
+	v.ensureSelectedVisibleWithoutRelayout(msgHeight)
 }
 
 func (v *MessageViewport) totalHeight() int {

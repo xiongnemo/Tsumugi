@@ -5,6 +5,7 @@
   "message.deleted": "(deleted)",
   "message.views": "%s views",
   "message.group_read_count": "read %d",
+  "message.via_bot": "via @%s",
 
   "media.photo": "[Photo]",
   "media.document": "[Document]",

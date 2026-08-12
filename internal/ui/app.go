@@ -512,6 +512,12 @@ func (a *App) applyEvent(event telegram.Event) {
 		} else {
 			a.setMessages(event.Messages, event.PreserveViewport)
 		}
+	case telegram.EventPeerPinned:
+		if event.PeerKey != a.currentChat {
+			return
+		}
+		a.messages.SetPinnedBanner(event.PinnedPreview)
+		a.applyMessagesPaneTitle()
 	case telegram.EventReadOutbox:
 		if event.PeerKey == a.currentChat && strings.HasPrefix(event.PeerKey, "user:") {
 			a.messages.ApplyReadOutboxMaxID(event.ReadOutboxMaxID, true)
@@ -639,6 +645,7 @@ func (a *App) refreshChats() {
 			a.messages.SetGroupReadMarks(a.currentGroupRead)
 			a.chatsHighlightPeer = peerID
 			a.clearReplyTarget()
+			a.messages.SetPinnedBanner("")
 			a.setMessages(nil, false)
 			a.commands <- telegram.Command{Kind: telegram.CommandFocusChat, PeerKey: peerID}
 			a.setStatusMsg(i18n.KeyStatusLoadingHistory)

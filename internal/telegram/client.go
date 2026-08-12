@@ -1069,27 +1069,43 @@ func (c *GotdClient) normalizeTGMessageWithPreview(ctx context.Context, api *tg.
 	if reactions, ok := msg.GetReactions(); ok {
 		reactionsJSON = ReactionsJSON(ParseMessageReactions(&reactions))
 	}
+	viaBot := viaBotUsername(msg, entities)
 	return storage.Message{
-		AccountID:     accountID,
-		PeerKey:       peerKey,
-		ID:            msg.ID,
-		Date:          time.Unix(int64(msg.Date), 0).UTC(),
-		Sender:        senderName,
-		SenderKind:    senderKind,
-		SenderID:      senderID,
-		SenderName:    senderName,
-		SenderColor:   senderColor(senderKind, senderID, senderName),
-		Outgoing:      msg.Out,
-		Text:          msg.Message,
-		MediaJSON:     mediaJSON,
-		MediaKind:     media.Kind,
-		ForwardSource: forward,
-		ReplyToID:     replyID,
-		State:         "synced",
-		Views:         views,
-		Forwards:      forwards,
-		ReactionsJSON: reactionsJSON,
+		AccountID:      accountID,
+		PeerKey:        peerKey,
+		ID:             msg.ID,
+		Date:           time.Unix(int64(msg.Date), 0).UTC(),
+		Sender:         senderName,
+		SenderKind:     senderKind,
+		SenderID:       senderID,
+		SenderName:     senderName,
+		SenderColor:    senderColor(senderKind, senderID, senderName),
+		Outgoing:       msg.Out,
+		Text:           msg.Message,
+		MediaJSON:      mediaJSON,
+		MediaKind:      media.Kind,
+		ForwardSource:  forward,
+		ReplyToID:      replyID,
+		State:          "synced",
+		Views:          views,
+		Forwards:       forwards,
+		ReactionsJSON:  reactionsJSON,
+		ViaBotUsername: viaBot,
 	}
+}
+
+func viaBotUsername(msg *tg.Message, entities entitiesByID) string {
+	if msg == nil {
+		return ""
+	}
+	botID, ok := msg.GetViaBotID()
+	if !ok || botID == 0 {
+		return ""
+	}
+	if u := entities.users[botID]; u != nil && u.Username != "" {
+		return u.Username
+	}
+	return ""
 }
 
 func chatSubtitle(p storage.Peer) string {
@@ -1187,6 +1203,7 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 				go c.refreshGroupReadMarks(ctx, accountID, api, events, peer, toRead)
 			}
 		}
+		go c.loadPeerPinnedMessage(ctx, accountID, api, events, peerKey)
 	}
 	c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusLoadingHistory)})
 
@@ -1248,6 +1265,7 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 			go c.enrichPeerMessagePreviews(ctx, accountID, api, events, peerKey, toEnrich)
 		}
 	}()
+	go c.loadPeerPinnedMessage(ctx, accountID, api, events, peerKey)
 	go func() {
 		if !c.isFocusedPeer(peerKey) {
 			return
@@ -1829,21 +1847,22 @@ func toTelegramMessages(messages []storage.Message) []Message {
 			replyAuthor = senderByID[msg.ReplyToID]
 		}
 		out = append(out, Message{
-			ID:            fmt.Sprintf("%d", msg.ID),
-			ChatID:        msg.PeerKey,
-			Author:        msg.SenderName,
-			AuthorColor:   msg.SenderColor,
-			Text:          msg.Text,
-			Outgoing:      msg.Outgoing,
-			CreatedAt:     msg.Date,
-			Media:         media,
-			ForwardSource: msg.ForwardSource,
-			ReplyToID:     intString(msg.ReplyToID),
-			ReplyToAuthor: replyAuthor,
-			State:         msg.State,
-			Views:         msg.Views,
-			Forwards:      msg.Forwards,
-			Reactions:     ReactionsFromJSON(msg.ReactionsJSON),
+			ID:             fmt.Sprintf("%d", msg.ID),
+			ChatID:         msg.PeerKey,
+			Author:         msg.SenderName,
+			AuthorColor:    msg.SenderColor,
+			Text:           msg.Text,
+			Outgoing:       msg.Outgoing,
+			CreatedAt:      msg.Date,
+			Media:          media,
+			ForwardSource:  msg.ForwardSource,
+			ReplyToID:      intString(msg.ReplyToID),
+			ReplyToAuthor:  replyAuthor,
+			State:          msg.State,
+			Views:          msg.Views,
+			Forwards:       msg.Forwards,
+			Reactions:      ReactionsFromJSON(msg.ReactionsJSON),
+			ViaBotUsername: msg.ViaBotUsername,
 		})
 	}
 	return out

@@ -1,5 +1,7 @@
 # Tsumugi
 
+**English** · [简体中文](README.zh-CN.md)
+
 Tsumugi is a Telegram TUI client written in Go.
 
 The MVP uses `gotd/td` as a pure Go MTProto backend and `tview`/`tcell` for the
@@ -19,6 +21,9 @@ share the same Telegram API adapter after authentication.
   set `TSUMUGI_PASSPHRASE` so a key can be derived with Argon2id.
 - TUI shell with folder rail, chat list, selectable message pane, composer,
   status/footer, keybindings, a settings hub, and a proxy settings modal.
+- Global pinned chats in the **All** folder (Saved Messages and other main-list
+  pins), synced from Telegram and shown at the top of the chat list with a pin
+  marker.
 - First-run onboarding wizard for language, Telegram login mode, API
   credentials, and phone/bot token setup when credentials are incomplete.
 - Proxy support for SOCKS5, HTTP CONNECT, and Telegram MTProxy.
@@ -184,7 +189,8 @@ UI labels. Editable profiles are stored in the local SQLite database.
 - `PgUp` / `PgDn` in message view: page the scroll; the highlight moves to the
   **first** visible message after scrolling up, or the **last** visible message
   after scrolling down (same for the mouse wheel). At the very top, `PgUp` also
-  loads older history
+  loads older history. Inline media preview height is stabilized so the composer
+  and scroll position do not jump while previews load.
 - `End`: jump to the latest messages, move the highlight to the last line, and
   clear the "new below" indicator
 - When you are scrolled up, new incoming messages are counted in the message

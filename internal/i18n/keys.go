@@ -7,6 +7,7 @@ const (
 	KeyDeleted               = "message.deleted"
 	KeyMessageViews          = "message.views"
 	KeyMessageGroupReadCount = "message.group_read_count"
+	KeyMessageViaBot         = "message.via_bot"
 
 	KeyMediaPhoto           = "media.photo"
 	KeyMediaDocument        = "media.document"

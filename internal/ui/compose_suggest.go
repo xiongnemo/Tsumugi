@@ -476,11 +476,12 @@ func (a *App) acceptComposeSuggestion(index int) {
 			fmt.Sscanf(a.replyTarget.ID, "%d", &replyToID)
 		}
 		a.commands <- telegram.Command{
-			Kind:      telegram.CommandSendInlineResult,
-			PeerKey:   a.currentChat,
-			QueryID:   item.Inline.QueryID,
-			ResultID:  item.Inline.ID,
-			ReplyToID: replyToID,
+			Kind:        telegram.CommandSendInlineResult,
+			PeerKey:     a.currentChat,
+			QueryID:     item.Inline.QueryID,
+			ResultID:    item.Inline.ID,
+			ReplyToID:   replyToID,
+			BotUsername: a.suggest.token.BotUsername,
 		}
 		a.setComposerText("")
 		a.clearReplyTarget()

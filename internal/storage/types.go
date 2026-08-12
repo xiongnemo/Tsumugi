@@ -41,25 +41,26 @@ type Peer struct {
 }
 
 type Message struct {
-	AccountID     string
-	PeerKey       string
-	ID            int
-	Date          time.Time
-	Sender        string
-	SenderKind    string
-	SenderID      int64
-	SenderName    string
-	SenderColor   int
-	Outgoing      bool
-	Text          string
-	MediaJSON     string
-	MediaKind     string
-	ForwardSource string
-	ReplyToID     int
-	State         string
-	Views         int
-	Forwards      int
-	ReactionsJSON string
+	AccountID      string
+	PeerKey        string
+	ID             int
+	Date           time.Time
+	Sender         string
+	SenderKind     string
+	SenderID       int64
+	SenderName     string
+	SenderColor    int
+	Outgoing       bool
+	Text           string
+	MediaJSON      string
+	MediaKind      string
+	ForwardSource  string
+	ReplyToID      int
+	State          string
+	Views          int
+	Forwards       int
+	ReactionsJSON  string
+	ViaBotUsername string
 }
 
 type DialogFilter struct {

@@ -21,6 +21,7 @@ const (
 	EventMentionSuggestions      EventKind = "mention_suggestions"
 	EventBotCommandSuggestions   EventKind = "bot_command_suggestions"
 	EventInlineResultSuggestions EventKind = "inline_result_suggestions"
+	EventPeerPinned              EventKind = "peer_pinned"
 )
 
 type Event struct {
@@ -51,6 +52,7 @@ type Event struct {
 	NextOffset       string
 	HasMore          bool
 	Placeholder      string
+	PinnedPreview    string
 }
 
 // BackgroundKind identifies low-priority work shown in the status bar right column.
@@ -223,6 +225,7 @@ type Message struct {
 	Forwards       int
 	Reactions      []ReactionSummary
 	RecentReact    []ReactionPeer
+	ViaBotUsername string
 }
 
 type MediaAttachment struct {

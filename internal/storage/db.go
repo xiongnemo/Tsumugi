@@ -196,6 +196,7 @@ func (db *DB) migrate(ctx context.Context) error {
 		{"messages", "views", "INTEGER NOT NULL DEFAULT 0"},
 		{"messages", "forwards", "INTEGER NOT NULL DEFAULT 0"},
 		{"messages", "reactions_json", "TEXT NOT NULL DEFAULT ''"},
+		{"messages", "via_bot_username", "TEXT NOT NULL DEFAULT ''"},
 		{"dialog_filters", "archive", "INTEGER NOT NULL DEFAULT 0"},
 		{"dialog_filters", "contacts", "INTEGER NOT NULL DEFAULT 0"},
 		{"dialog_filters", "non_contacts", "INTEGER NOT NULL DEFAULT 0"},
@@ -403,9 +404,9 @@ func (db *DB) SaveMessages(ctx context.Context, messages []Message) error {
 			INSERT INTO messages(
 				account_id, peer_key, message_id, date, sender, sender_kind, sender_id, sender_name, sender_color,
 				outgoing, text_blob, media_blob, media_kind, forward_source, reply_to_id, state,
-				views, forwards, reactions_json
+				views, forwards, reactions_json, via_bot_username
 			)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(account_id, peer_key, message_id) DO UPDATE SET
 				date = excluded.date,
 				sender = excluded.sender,
@@ -422,10 +423,11 @@ func (db *DB) SaveMessages(ctx context.Context, messages []Message) error {
 				state = excluded.state,
 				views = excluded.views,
 				forwards = excluded.forwards,
-				reactions_json = excluded.reactions_json
+				reactions_json = excluded.reactions_json,
+				via_bot_username = excluded.via_bot_username
 		`, msg.AccountID, msg.PeerKey, msg.ID, formatTime(msg.Date), msg.Sender, msg.SenderKind, msg.SenderID, msg.SenderName, msg.SenderColor,
 			boolInt(msg.Outgoing), textBlob, mediaBlob, msg.MediaKind, msg.ForwardSource, msg.ReplyToID, msg.State,
-			msg.Views, msg.Forwards, msg.ReactionsJSON); err != nil {
+			msg.Views, msg.Forwards, msg.ReactionsJSON, msg.ViaBotUsername); err != nil {
 			return err
 		}
 	}
@@ -438,7 +440,7 @@ func (db *DB) MessagesForPeer(ctx context.Context, accountID, peerKey string, li
 	}
 	rows, err := db.sql.QueryContext(ctx, `
 		SELECT message_id, date, sender, sender_kind, sender_id, sender_name, sender_color, outgoing,
-			text_blob, media_blob, media_kind, forward_source, reply_to_id, state, views, forwards, reactions_json
+			text_blob, media_blob, media_kind, forward_source, reply_to_id, state, views, forwards, reactions_json, via_bot_username
 		FROM messages WHERE account_id = ? AND peer_key = ?
 		ORDER BY date DESC, message_id DESC LIMIT ?
 	`, accountID, peerKey, limit)
@@ -500,7 +502,7 @@ func (db *DB) OlderMessagesForPeer(ctx context.Context, accountID, peerKey strin
 	}
 	rows, err := db.sql.QueryContext(ctx, `
 		SELECT message_id, date, sender, sender_kind, sender_id, sender_name, sender_color, outgoing,
-			text_blob, media_blob, media_kind, forward_source, reply_to_id, state, views, forwards, reactions_json
+			text_blob, media_blob, media_kind, forward_source, reply_to_id, state, views, forwards, reactions_json, via_bot_username
 		FROM messages WHERE account_id = ? AND peer_key = ? AND message_id > 0 AND message_id < ?
 		ORDER BY date DESC, message_id DESC LIMIT ?
 	`, accountID, peerKey, beforeID, limit)
@@ -582,7 +584,7 @@ func (db *DB) PeerKeysForMessageIDs(ctx context.Context, accountID string, ids [
 func (db *DB) MessageByID(ctx context.Context, accountID, peerKey string, messageID int) (Message, bool, error) {
 	row := db.sql.QueryRowContext(ctx, `
 		SELECT message_id, date, sender, sender_kind, sender_id, sender_name, sender_color, outgoing,
-			text_blob, media_blob, media_kind, forward_source, reply_to_id, state, views, forwards, reactions_json
+			text_blob, media_blob, media_kind, forward_source, reply_to_id, state, views, forwards, reactions_json, via_bot_username
 		FROM messages WHERE account_id = ? AND peer_key = ? AND message_id = ?
 	`, accountID, peerKey, messageID)
 	msg, err := db.scanMessage(row, accountID, peerKey)
@@ -1026,7 +1028,7 @@ func (db *DB) scanMessage(scanner messageScanner, accountID, peerKey string) (Me
 	msg.PeerKey = peerKey
 	if err := scanner.Scan(&msg.ID, &date, &msg.Sender, &msg.SenderKind, &msg.SenderID, &msg.SenderName, &msg.SenderColor, &outgoing,
 		&textBlob, &mediaBlob, &msg.MediaKind, &msg.ForwardSource, &msg.ReplyToID, &msg.State,
-		&msg.Views, &msg.Forwards, &msg.ReactionsJSON); err != nil {
+		&msg.Views, &msg.Forwards, &msg.ReactionsJSON, &msg.ViaBotUsername); err != nil {
 		return Message{}, err
 	}
 	msg.Date = parseTime(date)

@@ -5,6 +5,7 @@
   "message.deleted": "(已删除)",
   "message.views": "%s 次浏览",
   "message.group_read_count": "已读 %d",
+  "message.via_bot": "通过 @%s",
 
   "media.photo": "[照片]",
   "media.document": "[文件]",

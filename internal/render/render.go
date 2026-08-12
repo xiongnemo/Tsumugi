@@ -91,7 +91,14 @@ func MessageRowLines(message telegram.Message, width int, opts MessageRowOpts) [
 		return lines
 	}
 	text := messageBodyText(message)
-	lines := appendBodyLines(nil, header, text, width)
+	var lines []string
+	if header != "" {
+		lines = append(lines, Truncate(header, width))
+	}
+	if viaLine := messageViaBotLine(message.ViaBotUsername, width); viaLine != "" {
+		lines = append(lines, viaLine)
+	}
+	lines = appendBodyLines(lines, "", text, width)
 	if reactLine := reactionsLine(message.Reactions, width); reactLine != "" {
 		lines = append(lines, Truncate(reactLine, width))
 	}
@@ -160,6 +167,13 @@ func outgoingPrefix(message telegram.Message, opts MessageRowOpts) string {
 		return ">"
 	}
 	return " "
+}
+
+func messageViaBotLine(username string, width int) string {
+	if username == "" {
+		return ""
+	}
+	return Truncate(fmt.Sprintf("[gray]%s[-]", i18n.Tf(i18n.KeyMessageViaBot, username)), width)
 }
 
 func messageRowMeta(message telegram.Message, opts MessageRowOpts) string {

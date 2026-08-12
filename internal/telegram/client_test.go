@@ -318,6 +318,56 @@ func TestSenderDisplayNameMissingEntityIsEmpty(t *testing.T) {
 	}
 }
 
+func TestViaBotUsernameFromMessage(t *testing.T) {
+	msg := &tg.Message{}
+	msg.SetViaBotID(100)
+	entities := entitiesByID{
+		users: map[int64]*tg.User{
+			100: {ID: 100, Username: "CalcuBot", Bot: true},
+		},
+	}
+	if got := viaBotUsername(msg, entities); got != "CalcuBot" {
+		t.Fatalf("viaBotUsername = %q, want CalcuBot", got)
+	}
+	if got := viaBotUsername(&tg.Message{}, entities); got != "" {
+		t.Fatalf("missing ViaBotID should be empty, got %q", got)
+	}
+}
+
+func TestMessagesFromSendUpdatesInlineResult(t *testing.T) {
+	client := NewGotdClient(testConfig(), nil)
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateNewMessage{
+				Message: func() *tg.Message {
+					msg := &tg.Message{
+						ID:      61999,
+						Out:     true,
+						Message: "1+2 = 3",
+						Date:    int(time.Now().Unix()),
+						PeerID:  &tg.PeerChannel{ChannelID: 42},
+					}
+					msg.SetViaBotID(100)
+					return msg
+				}(),
+			},
+		},
+		Users: []tg.UserClass{
+			&tg.User{ID: 100, Username: "CalcuBot", Bot: true},
+		},
+	}
+	got := client.messagesFromSendUpdates(context.Background(), nil, "user:1", "channel:42", "", 0, updates)
+	if len(got) != 1 {
+		t.Fatalf("messages = %+v, want one", got)
+	}
+	if got[0].Text != "1+2 = 3" || !got[0].Outgoing {
+		t.Fatalf("message = %+v", got[0])
+	}
+	if got[0].ViaBotUsername != "CalcuBot" {
+		t.Fatalf("ViaBotUsername = %q, want CalcuBot", got[0].ViaBotUsername)
+	}
+}
+
 func testConfig() config.Config {
 	return config.Config{}
 }

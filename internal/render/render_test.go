@@ -319,6 +319,28 @@ func TestMessageRowLinesHeaderBodySameStartColumn(t *testing.T) {
 	}
 }
 
+func TestMessageRowLinesViaBot(t *testing.T) {
+	created := time.Date(2026, 5, 6, 12, 50, 0, 0, time.Local)
+	lines := MessageRowLines(telegram.Message{
+		Text:           "3 = 1+2",
+		Outgoing:       true,
+		CreatedAt:      created,
+		ViaBotUsername: "CalcuBot",
+	}, 80, MessageRowOpts{Layout: LayoutIM})
+	if len(lines) < 3 {
+		t.Fatalf("expected header, via, and body lines, got %v", lines)
+	}
+	if !strings.Contains(lines[1], "CalcuBot") {
+		t.Fatalf("via line = %q, want bot username", lines[1])
+	}
+	if !strings.Contains(lines[1], "via @") {
+		t.Fatalf("via line = %q, want localized via prefix", lines[1])
+	}
+	if lines[2] != "3 = 1+2" {
+		t.Fatalf("body line = %q", lines[2])
+	}
+}
+
 func TestMessageRowLinesRasterPreviewNotWordWrapped(t *testing.T) {
 	created := time.Date(2026, 5, 6, 3, 54, 0, 0, time.Local)
 	raster := strings.Repeat("[#ff0000]█[-][#00ff00]█[-]", 10)

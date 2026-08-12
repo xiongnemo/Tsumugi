@@ -508,8 +508,26 @@ func (c *GotdClient) sendInlineResult(ctx context.Context, accountID string, api
 	if cmd.ReplyToID != 0 {
 		req.SetReplyTo(&tg.InputReplyToMessage{ReplyToMsgID: cmd.ReplyToID})
 	}
-	if _, err := api.MessagesSendInlineBotResult(ctx, req); err != nil {
+	updates, err := api.MessagesSendInlineBotResult(ctx, req)
+	if err != nil {
 		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: cmd.PeerKey, Error: fmt.Errorf("send inline result: %w", err)})
+		return
+	}
+	serverMessages := c.messagesFromSendUpdates(ctx, api, accountID, cmd.PeerKey, "", cmd.ReplyToID, updates)
+	for i := range serverMessages {
+		if serverMessages[i].ViaBotUsername == "" && cmd.BotUsername != "" {
+			serverMessages[i].ViaBotUsername = cmd.BotUsername
+		}
+	}
+	if len(serverMessages) > 0 {
+		_ = c.store.SaveMessages(ctx, serverMessages)
+		sendEvent(ctx, events, Event{
+			Kind:      EventMessages,
+			PeerKey:   cmd.PeerKey,
+			Messages:  c.telegramMessages(ctx, accountID, serverMessages),
+			Append:    true,
+			StatusMsg: i18n.M(i18n.KeyStatusMessageSent),
+		})
 		return
 	}
 	sendEvent(ctx, events, Event{Kind: EventStatus, PeerKey: cmd.PeerKey, StatusMsg: i18n.M(i18n.KeyStatusMessageSubmitted)})
