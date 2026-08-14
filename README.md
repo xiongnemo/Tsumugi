@@ -59,7 +59,10 @@ JPEG, GIF, WebP). Video containers are not decoded inline in the terminal.
 Enable **inline GIF animation** in Settings (`?` → General) to animate cached
 GIF/MP4/WebM previews in the message list (Telegram GIFs and video stickers).
 MP4 and WebM decoding uses **ffmpeg** in your `PATH`. This redraws periodically
-and can use more CPU on busy chats. Decoded animation frames are kept in a shared
+and can use more CPU on busy chats. Without ffmpeg you still get a picture: GIFs
+and video stickers fall back to rendering Telegram's own JPEG thumbnail, so they
+appear as a static image rather than a text label. Only the animation needs
+ffmpeg. Decoded animation frames are kept in a shared
 32 MB in-memory LRU cache; set `TSUMUGI_INLINE_ANIM_CACHE_MB` to a positive
 integer to raise or lower that budget. You can also set `TSUMUGI_INLINE_ANIM=1`
 before first launch when the setting is not yet stored in SQLite.

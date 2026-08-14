@@ -116,8 +116,32 @@ func (c *GotdClient) enrichMediaPreviewAttempt(ctx context.Context, api *tg.Clie
 			media.PreviewText = renderVideoStillPreview(localPath, termmedia.PreviewMaxCols, termmedia.PreviewMaxRows)
 		}
 		if media.PreviewText == "" {
+			media.PreviewText = c.thumbnailPreview(ctx, api, media)
+		}
+		if media.PreviewText == "" {
 			media.PreviewText = mediaFallbackText(media) + " (cached; press O to open)"
 		}
 	}
 	return media, false
+}
+
+// thumbnailPreview renders Telegram's own JPEG thumbnail for the attachment.
+//
+// This is the fallback for GIFs and video stickers, whose cached file is an MP4: the pure Go
+// still decoder cannot read it, and the frame-extraction path needs ffmpeg in PATH. Without
+// this step a machine with no ffmpeg showed those messages as a bare "[GIF] 3s" label with no
+// picture at all, which is much worse than a static frame. Plain videos already resolve to
+// their thumbnail in ensureMediaPreview and never reach here.
+//
+// LocalPath is deliberately left pointing at the animation, because that is what O opens and
+// what the inline animator decodes; only the drawn raster comes from the thumbnail.
+func (c *GotdClient) thumbnailPreview(ctx context.Context, api *tg.Client, media MediaAttachment) string {
+	if api == nil || media.ThumbSize == "" {
+		return ""
+	}
+	thumbPath, err := c.ensureDocumentThumb(ctx, api, media)
+	if err != nil || thumbPath == "" {
+		return ""
+	}
+	return renderMediaPreview(thumbPath)
 }

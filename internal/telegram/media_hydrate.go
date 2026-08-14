@@ -36,7 +36,12 @@ func hydrateMediaPreviewFromDisk(mediaDir string, media MediaAttachment) MediaAt
 		if raster == "" {
 			continue
 		}
-		media.LocalPath = path
+		// Only adopt the path when we do not already have the real file. For a GIF the
+		// candidates include its thumbnail JPEG, and overwriting LocalPath with that would
+		// make O open a still image and stop the inline animator from finding the MP4.
+		if media.LocalPath == "" {
+			media.LocalPath = path
+		}
 		media.PreviewText = raster
 		return media
 	}

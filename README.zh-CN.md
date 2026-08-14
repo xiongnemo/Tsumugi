@@ -26,7 +26,7 @@ MVP 使用纯 Go 的 `gotd/td` 作为 MTProto 后端，使用 `tview`/`tcell` �
 - 媒体分类：保留 emoji 的文本、静态贴纸、动画贴纸、视频贴纸、GIF、视频、图片与文件。
 - 媒体缓存/打开边界，以及纯 Go 终端半块字符渲染器（用于图片/贴纸缩略图，无需外部 image-to-terminal CLI）。
 
-内联预览使用 Unicode 半块字符与 true-color ANSI，再转换为 `tview` 可用格式。消息详情在模态框绘制后按布局在右侧栏打开预览。支持的静态格式与 Go 解码路径一致（PNG、JPEG、GIF、WebP）。终端内不解码视频容器。在设置（`?` → General）中启用 **inline GIF animation** 可在消息列表中播放已缓存的 GIF/MP4/WebM 预览（Telegram GIF 与 video sticker）。MP4/WebM 解码依赖 `PATH` 中的 **ffmpeg**。这会周期性重绘，在消息较多的会话中可能占用更多 CPU。解码后的动画帧保存在共享的 32 MB 内存 LRU 缓存中；可通过 `TSUMUGI_INLINE_ANIM_CACHE_MB` 调整上限。若 SQLite 中尚未保存该设置，也可在首次启动前设置 `TSUMUGI_INLINE_ANIM=1`。
+内联预览使用 Unicode 半块字符与 true-color ANSI，再转换为 `tview` 可用格式。消息详情在模态框绘制后按布局在右侧栏打开预览。支持的静态格式与 Go 解码路径一致（PNG、JPEG、GIF、WebP）。终端内不解码视频容器。在设置（`?` → General）中启用 **inline GIF animation** 可在消息列表中播放已缓存的 GIF/MP4/WebM 预览（Telegram GIF 与 video sticker）。MP4/WebM 解码依赖 `PATH` 中的 **ffmpeg**。这会周期性重绘，在消息较多的会话中可能占用更多 CPU。没有 ffmpeg 时仍然能看到画面：GIF 与 video sticker 会退回渲染 Telegram 自带的 JPEG 缩略图，显示为静态图而不是一行文字标签——只有「动起来」这件事需要 ffmpeg。解码后的动画帧保存在共享的 32 MB 内存 LRU 缓存中；可通过 `TSUMUGI_INLINE_ANIM_CACHE_MB` 调整上限。若 SQLite 中尚未保存该设置，也可在首次启动前设置 `TSUMUGI_INLINE_ANIM=1`。
 
 纯媒体消息（投票、联系人、位置及其他附件类型）在会话列表与消息视图中显示本地化占位符，而非 `(empty message)`。
 
