@@ -22,6 +22,8 @@ const (
 	EventBotCommandSuggestions   EventKind = "bot_command_suggestions"
 	EventInlineResultSuggestions EventKind = "inline_result_suggestions"
 	EventPeerPinned              EventKind = "peer_pinned"
+	EventPinnedMessages          EventKind = "pinned_messages"
+	EventInlineResultThumb       EventKind = "inline_result_thumb"
 )
 
 type Event struct {
@@ -53,6 +55,12 @@ type Event struct {
 	HasMore          bool
 	Placeholder      string
 	PinnedPreview    string
+	// SelectMessageID asks the UI to highlight this message after applying Messages,
+	// used by jump-to-message so the target lands selected.
+	SelectMessageID string
+	// ResultID/ThumbPreview carry one rendered inline-result thumbnail back to the grid.
+	ResultID     string
+	ThumbPreview string
 }
 
 // BackgroundKind identifies low-priority work shown in the status bar right column.
@@ -160,6 +168,9 @@ const (
 	CommandLoadBotCommands  CommandKind = "load_bot_commands"
 	CommandQueryInlineBot   CommandKind = "query_inline_bot"
 	CommandSendInlineResult CommandKind = "send_inline_result"
+	CommandLoadPinned       CommandKind = "load_pinned"
+	CommandJumpToMessage    CommandKind = "jump_to_message"
+	CommandFetchInlineThumb CommandKind = "fetch_inline_thumb"
 )
 
 type Command struct {
@@ -201,6 +212,16 @@ type InlineResultSuggestion struct {
 	Title       string
 	Description string
 	Type        string
+	// Media dimensions for results that carry no title, which is the normal case for
+	// GIF bots. Without these every row in the panel renders as the bare type name.
+	Width    int
+	Height   int
+	Duration int
+	Size     int64
+	MimeType string
+	// Thumb locates the result's JPEG thumbnail so the grid can render a preview without
+	// downloading the full animation.
+	Thumb MediaAttachment
 }
 
 type MessageEntityMentionName struct {

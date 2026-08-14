@@ -46,3 +46,13 @@ func TestLocalizedChatDisplayLeavesUserTextAlone(t *testing.T) {
 		t.Fatalf("preview = %q", got.LastPreview)
 	}
 }
+
+func TestLocalizedChatDisplayTranslatesChatKind(t *testing.T) {
+	i18n.SetLocale("zh")
+	t.Cleanup(func() { i18n.SetLocale("en") })
+
+	got := localizedChatDisplay(telegram.Chat{Title: "Nemo", Subtitle: "group"})
+	if got.Subtitle != "群组" {
+		t.Fatalf("subtitle = %q, want 群组", got.Subtitle)
+	}
+}

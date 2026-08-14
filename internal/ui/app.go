@@ -67,6 +67,13 @@ type App struct {
 	folderBrowseSnapID *int
 	// chatsListRestoring is true while refreshChats is rebuilding items; SetChangedFunc must not clobber highlight.
 	chatsListRestoring bool
+	// Pinned message list overlay. The panel opens immediately on '#' and is filled in
+	// place when the search result arrives, so the key press feels instant.
+	pinnedList      *tview.List
+	pinnedHint      *tview.TextView
+	pinnedPeer      string
+	pinnedCache     []telegram.Message
+	pinnedCachePeer string
 	// Message actions modal (non-nil while detail/form overlay is open).
 	msgActionDetail  *tview.TextView
 	msgActionPreview *tview.TextView
@@ -181,6 +188,7 @@ func (a *App) build() {
 
 	a.composeStack = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.suggest.panel, 0, 0, false).
+		AddItem(a.suggest.grid, 0, 0, false).
 		AddItem(a.composer, 3, 0, false).
 		AddItem(a.suggest.ghost, 1, 0, false)
 
@@ -394,6 +402,11 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 			a.showReactionPanel()
 			return nil
 		}
+	case '#':
+		if focus == a.messages {
+			a.requestPinnedMessages()
+			return nil
+		}
 	case '/':
 		a.showSearch()
 		return nil
@@ -501,6 +514,14 @@ func (a *App) applyEvent(event telegram.Event) {
 		if !messageEventForCurrentChat {
 			return
 		}
+		// A removal-only event carries no Messages; the removals were already applied above.
+		// Falling through to the replace branch would hand setMessages an empty list and blank
+		// the whole conversation, which is what happened when a message was deleted from
+		// another session.
+		if len(event.Messages) == 0 && len(event.RemoveMessageIDs) > 0 {
+			a.applyMessagesPaneTitle()
+			return
+		}
 		if event.Append {
 			for _, message := range event.Messages {
 				a.appendMessage(message)
@@ -512,12 +533,19 @@ func (a *App) applyEvent(event telegram.Event) {
 		} else {
 			a.setMessages(event.Messages, event.PreserveViewport)
 		}
+		if event.SelectMessageID != "" && a.selectMessageByID(event.SelectMessageID) {
+			a.onMessageSelectionChanged()
+		}
 	case telegram.EventPeerPinned:
 		if event.PeerKey != a.currentChat {
 			return
 		}
 		a.messages.SetPinnedBanner(event.PinnedPreview)
 		a.applyMessagesPaneTitle()
+	case telegram.EventPinnedMessages:
+		a.applyPinnedMessages(event.PeerKey, event.Messages)
+	case telegram.EventInlineResultThumb:
+		a.applyInlineThumb(event)
 	case telegram.EventReadOutbox:
 		if event.PeerKey == a.currentChat && strings.HasPrefix(event.PeerKey, "user:") {
 			a.messages.ApplyReadOutboxMaxID(event.ReadOutboxMaxID, true)
@@ -635,7 +663,7 @@ func (a *App) refreshChats() {
 		display := localizedChatDisplay(chat)
 		peerID := chat.ID
 		title := chat.Title
-		a.chats.AddItem(render.ChatRow(display, rowWidth), render.Truncate(display.Subtitle, rowWidth), 0, func() {
+		a.chats.AddItem(render.ChatRow(display, rowWidth), render.Truncate(display.LastPreview, rowWidth), 0, func() {
 			a.currentChat = peerID
 			a.resetGapFillQueue()
 			a.currentTitle = title
@@ -646,6 +674,8 @@ func (a *App) refreshChats() {
 			a.chatsHighlightPeer = peerID
 			a.clearReplyTarget()
 			a.messages.SetPinnedBanner("")
+			a.pinnedCache = nil
+			a.pinnedCachePeer = ""
 			a.setMessages(nil, false)
 			a.commands <- telegram.Command{Kind: telegram.CommandFocusChat, PeerKey: peerID}
 			a.setStatusMsg(i18n.KeyStatusLoadingHistory)
@@ -1011,6 +1041,7 @@ func (a *App) showMessageActions() {
 			messageAction{ID: "download_media", LabelKey: i18n.KeyActionDownloadMedia},
 		)
 	}
+	// Service rows set ReplyToID for pins, so this is where "jump to pinned message" shows up.
 	if msg.ReplyToID != "" {
 		actions = append(actions, messageAction{ID: "jump_reply", LabelKey: i18n.KeyActionJumpReply})
 	}
@@ -1204,13 +1235,7 @@ func (a *App) runMessageAction(action string, msg telegram.Message) {
 			a.setStatusMsg(i18n.KeyStatusNotAReply)
 			return
 		}
-		if a.selectMessageByID(msg.ReplyToID) {
-			a.setStatusMsg(i18n.KeyStatusJumpedToReply)
-			return
-		}
-		beforeID, _ := strconv.Atoi(a.messages.OldestMessageID())
-		a.commands <- telegram.Command{Kind: telegram.CommandLoadOlder, PeerKey: a.currentChat, MessageID: beforeID}
-		a.setStatusMsg(i18n.KeyStatusReplyLoadingOlder)
+		a.jumpToMessageID(msg.ReplyToID)
 	case "react":
 		a.showReactionPanelFor(msg)
 	case "cancel":

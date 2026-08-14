@@ -61,9 +61,7 @@ func ChatRow(chat telegram.Chat, width int) string {
 	if chat.Subtitle != "" {
 		title = title + " | " + chat.Subtitle
 	}
-	if chat.LastPreview != "" && !strings.Contains(title, chat.LastPreview) {
-		title = title + " | " + chat.LastPreview
-	}
+	// The message preview belongs on the list's secondary line, not here.
 	return Truncate(title, width)
 }
 
@@ -170,6 +168,68 @@ func outgoingPrefix(message telegram.Message, opts MessageRowOpts) string {
 		return ">"
 	}
 	return " "
+}
+
+// PinnedRow renders one entry of the pinned message list: timestamp, then the message text
+// or its media label. Service rows fall back to their system line.
+func PinnedRow(message telegram.Message, width int) string {
+	prefix := ""
+	if !message.CreatedAt.IsZero() {
+		prefix = messageRowTime(message.CreatedAt) + " "
+	}
+	body := message.Text
+	if body == "" {
+		if line := ServiceLine(message, 0); line != "" {
+			body = line
+		} else if message.Media.Label != "" {
+			body = message.Media.Label
+		} else {
+			body = i18n.T(i18n.KeyMessageEmpty)
+		}
+	}
+	return Truncate(prefix+firstLine(body), width)
+}
+
+func firstLine(text string) string {
+	if idx := strings.IndexAny(text, "\r\n"); idx >= 0 {
+		return text[:idx]
+	}
+	return text
+}
+
+// InlineResultDetail summarises an inline bot result's media so titleless results (the
+// normal case for GIF bots) are still distinguishable from each other in the panel.
+func InlineResultDetail(result telegram.InlineResultSuggestion) string {
+	var parts []string
+	if result.Width > 0 && result.Height > 0 {
+		parts = append(parts, fmt.Sprintf("%dx%d", result.Width, result.Height))
+	}
+	if result.Duration > 0 {
+		parts = append(parts, fmt.Sprintf("%ds", result.Duration))
+	}
+	if result.Size > 0 {
+		parts = append(parts, HumanSize(result.Size))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// HumanSize formats a byte count for compact single-line display.
+func HumanSize(size int64) string {
+	const unit = 1024
+	if size < unit {
+		return fmt.Sprintf("%dB", size)
+	}
+	value := float64(size)
+	for _, suffix := range []string{"KB", "MB", "GB"} {
+		value /= unit
+		if value < unit {
+			if value < 10 {
+				return fmt.Sprintf("%.1f%s", value, suffix)
+			}
+			return fmt.Sprintf("%.0f%s", value, suffix)
+		}
+	}
+	return fmt.Sprintf("%.0fGB", value)
 }
 
 // ServiceLine renders a Telegram service (system) message as a single dim line, e.g.
@@ -346,6 +406,9 @@ func messageDetail(message telegram.Message, includePreview bool) string {
 	if message.State == "deleted" {
 		return fmt.Sprintf("%s %s [red]%s", prefix, meta, i18n.T(i18n.KeyDeleted))
 	}
+	if line := ServiceLine(message, 0); line != "" {
+		return line
+	}
 	text := messageBodyText(message)
 	if includePreview && message.Media.PreviewText != "" {
 		text = text + "\n\n" + message.Media.PreviewText
@@ -374,6 +437,7 @@ func Footer(mode, version string, proxy network.ProxyConfig) string {
 		i18n.T(i18n.KeyUIFooterEnter),
 		i18n.T(i18n.KeyUIFooterLayout),
 		i18n.T(i18n.KeyUIFooterReact),
+		i18n.T(i18n.KeyUIFooterPinned),
 		i18n.T(i18n.KeyUIFooterCompose),
 		i18n.T(i18n.KeyUIFooterSearch),
 		i18n.T(i18n.KeyUIFooterDownload),

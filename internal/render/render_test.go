@@ -427,3 +427,57 @@ func TestServiceLineEmptyForOrdinaryMessage(t *testing.T) {
 		t.Fatalf("ServiceLine = %q, want empty", got)
 	}
 }
+
+func TestChatRowIsTitleAndKindOnly(t *testing.T) {
+	got := ChatRow(telegram.Chat{
+		Title:       "Nemo",
+		Subtitle:    "group",
+		LastPreview: "[Photo]",
+		Unread:      3,
+	}, 100)
+	if got != "Nemo (3) | group" {
+		t.Fatalf("ChatRow = %q, want %q", got, "Nemo (3) | group")
+	}
+	// The preview belongs on the list's secondary line; repeating it here produced
+	// "name | kind preview | preview" once the locale changed.
+	if strings.Contains(got, "[Photo]") {
+		t.Fatalf("ChatRow should not include the preview: %q", got)
+	}
+}
+
+func TestInlineResultDetailDistinguishesTitlelessResults(t *testing.T) {
+	// GIF bots return no title or description, so the detail line is the only thing that
+	// tells one row from another.
+	got := InlineResultDetail(telegram.InlineResultSuggestion{
+		Type:     "gif",
+		Width:    480,
+		Height:   270,
+		Duration: 3,
+		Size:     1_200_000,
+	})
+	if got != "480x270 · 3s · 1.1MB" {
+		t.Fatalf("detail = %q", got)
+	}
+	if empty := InlineResultDetail(telegram.InlineResultSuggestion{Type: "article"}); empty != "" {
+		t.Fatalf("detail = %q, want empty when no media metadata", empty)
+	}
+}
+
+func TestPinnedRowFallsBackToMediaAndService(t *testing.T) {
+	when := time.Date(2026, 8, 14, 19, 14, 0, 0, time.UTC)
+
+	text := PinnedRow(telegram.Message{CreatedAt: when, Text: "first line\nsecond line"}, 100)
+	if strings.Contains(text, "second line") {
+		t.Fatalf("pinned row should keep one line: %q", text)
+	}
+
+	media := PinnedRow(telegram.Message{CreatedAt: when, Media: telegram.MediaAttachment{Kind: "photo", Label: "[Photo]"}}, 100)
+	if !strings.Contains(media, "[Photo]") {
+		t.Fatalf("pinned row = %q", media)
+	}
+
+	service := PinnedRow(telegram.Message{CreatedAt: when, ServiceKey: "service.pinned_message"}, 100)
+	if !strings.Contains(service, "pinned a message") {
+		t.Fatalf("pinned row = %q", service)
+	}
+}

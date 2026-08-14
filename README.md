@@ -100,7 +100,7 @@ $env:TSUMUGI_INLINE_ANIM = '1'
 $env:TSUMUGI_OUTGOING_LAYOUT = 'im'
 ```
 
-In the message pane, press **`L`** to toggle outgoing layout (`transcript` = left-aligned with `>` prefix, `im` = incoming left / outgoing right). Press **`R`** on a selected message to view reactions and send a quick emoji (keys `1`–`8`). Broadcast channel posts show view counts (👁) instead of private-chat read receipts.
+In the message pane, press **`L`** to toggle outgoing layout (`transcript` = left-aligned with `>` prefix, `im` = incoming left / outgoing right). Press **`R`** on a selected message to view reactions and send a quick emoji (keys `1`–`8`). Press **`#`** to expand the pinned banner into the full list of pinned messages for the chat; `Enter` jumps to one, `Esc` closes. Broadcast channel posts show view counts (👁) instead of private-chat read receipts.
 
 Telegram API credentials, phone numbers, and bot tokens can be entered in the
 first-run onboarding wizard or supplied through env/CLI. The database passphrase
@@ -218,8 +218,16 @@ UI labels. Editable profiles are stored in the local SQLite database.
 - `Esc`: close modal and return to chat list
 - `q` or `Ctrl+C`: quit
 
-Compose suggestion limits: the panel shows at most five visible entries. Inline
-bots that require location are reported as unsupported in this MVP.
+Inline bot results are shown as a grid of thumbnails rather than a list, because
+GIF bots return no titles and a list of identical rows gives you nothing to
+choose between. Each cell renders the result's JPEG thumbnail with the pure Go
+half-block renderer — the full animation is never downloaded just to preview it.
+Arrow keys move left/right within a row and up/down by a whole row; `Enter` or
+`Tab` sends the highlighted result, and clicking a cell picks it.
+
+Compose suggestion limits: mention and command panels show at most five visible
+entries. Inline bots that require location are reported as unsupported in this
+MVP.
 
 ## Development
 

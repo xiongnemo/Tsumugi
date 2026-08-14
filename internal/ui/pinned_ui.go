@@ -1,0 +1,136 @@
+package ui
+
+import (
+	"strconv"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
+
+	"github.com/nemo/Tsumugi/internal/i18n"
+	"github.com/nemo/Tsumugi/internal/render"
+	"github.com/nemo/Tsumugi/internal/telegram"
+)
+
+// requestPinnedMessages opens the pinned list straight away and asks the backend to fill it.
+// The search is a network round trip, so waiting for the result before drawing anything made
+// the key press feel dead; the panel appears now and the rows arrive into it.
+func (a *App) requestPinnedMessages() {
+	if a.currentChat == "" {
+		a.setStatusMsg(i18n.KeyStatusNoChatSelected)
+		return
+	}
+	peerKey := a.currentChat
+	cached := a.pinnedCache
+	if a.pinnedCachePeer != peerKey {
+		cached = nil
+	}
+	a.openPinnedPanel(peerKey, cached)
+	a.commands <- telegram.Command{Kind: telegram.CommandLoadPinned, PeerKey: peerKey}
+}
+
+func (a *App) openPinnedPanel(peerKey string, cached []telegram.Message) {
+	list := tview.NewList().ShowSecondaryText(true)
+	hint := tview.NewTextView().SetDynamicColors(true)
+
+	a.pinnedList = list
+	a.pinnedHint = hint
+	a.pinnedPeer = peerKey
+
+	layout := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(list, 0, 1, true).
+		AddItem(hint, 1, 0, false)
+	layout.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeyPinnedTitleShort) + " ")
+	layout.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEsc {
+			a.closePinnedPanel()
+			return nil
+		}
+		return event
+	})
+
+	// Showing the previous result for this chat while the refresh runs keeps a reopen
+	// instant instead of flashing a spinner over content we already had.
+	a.fillPinnedList(cached, true)
+
+	a.app.SetRoot(layout, true)
+	a.app.SetFocus(list)
+}
+
+func (a *App) closePinnedPanel() {
+	a.pinnedList = nil
+	a.pinnedHint = nil
+	a.pinnedPeer = ""
+	a.restoreMessageFocus()
+}
+
+// fillPinnedList rebuilds the panel rows. loading marks the state where a refresh is still in
+// flight, which changes only the footer hint and the placeholder for an empty list.
+func (a *App) fillPinnedList(messages []telegram.Message, loading bool) {
+	if a.pinnedList == nil {
+		return
+	}
+	a.pinnedList.Clear()
+	if len(messages) == 0 {
+		if loading {
+			a.pinnedList.AddItem(i18n.T(i18n.KeyPinnedLoading), "", 0, nil)
+		} else {
+			a.pinnedList.AddItem(i18n.T(i18n.KeyPinnedEmpty), "", 0, nil)
+		}
+	}
+	rowWidth := a.chatListRowWidth()
+	for _, msg := range messages {
+		id := msg.ID
+		a.pinnedList.AddItem(render.PinnedRow(msg, rowWidth), msg.Author, 0, func() {
+			a.closePinnedPanel()
+			a.jumpToMessageID(id)
+		})
+	}
+	if a.pinnedHint != nil {
+		if loading {
+			a.pinnedHint.SetText("[gray]" + i18n.T(i18n.KeyPinnedLoading))
+		} else {
+			a.pinnedHint.SetText(i18n.T(i18n.KeyPinnedHint))
+		}
+	}
+	if title := a.pinnedTitle(messages, loading); title != "" && a.pinnedList != nil {
+		a.pinnedList.SetTitle(title)
+	}
+}
+
+func (a *App) pinnedTitle(messages []telegram.Message, loading bool) string {
+	if loading && len(messages) == 0 {
+		return ""
+	}
+	return " " + i18n.Tf(i18n.KeyPinnedTitle, len(messages)) + " "
+}
+
+// applyPinnedMessages fills the open panel, or just records the result when the user has
+// already closed it or moved to another chat.
+func (a *App) applyPinnedMessages(peerKey string, messages []telegram.Message) {
+	a.pinnedCache = messages
+	a.pinnedCachePeer = peerKey
+	if a.pinnedList == nil || a.pinnedPeer != peerKey {
+		return
+	}
+	a.fillPinnedList(messages, false)
+}
+
+// jumpToMessageID selects the target if it is already loaded, otherwise it asks the backend
+// for a window centred on it. Paging backwards from the viewport never arrived for targets
+// far from the loaded range, so this is the single path all jumps use.
+func (a *App) jumpToMessageID(id string) {
+	if id == "" {
+		return
+	}
+	if a.selectMessageByID(id) {
+		a.setStatusMsg(i18n.KeyStatusJumpedToMessage)
+		return
+	}
+	messageID, err := strconv.Atoi(id)
+	if err != nil || messageID <= 0 {
+		a.setStatusMsg(i18n.KeyStatusMessageNotFound)
+		return
+	}
+	a.commands <- telegram.Command{Kind: telegram.CommandJumpToMessage, PeerKey: a.currentChat, MessageID: messageID}
+	a.setStatusMsg(i18n.KeyStatusJumpingToMessage)
+}

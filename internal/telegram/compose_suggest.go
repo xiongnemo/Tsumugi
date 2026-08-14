@@ -10,6 +10,7 @@ import (
 	"github.com/gotd/td/tg"
 
 	"github.com/nemo/Tsumugi/internal/i18n"
+	termmedia "github.com/nemo/Tsumugi/internal/media"
 	"github.com/nemo/Tsumugi/internal/storage"
 )
 
@@ -470,10 +471,81 @@ func inlineResultSuggestions(queryID int64, results []tg.BotInlineResultClass) [
 		case *tg.BotInlineMediaResult:
 			title, _ := item.GetTitle()
 			description, _ := item.GetDescription()
-			out = append(out, InlineResultSuggestion{ID: item.ID, QueryID: queryID, Title: title, Description: description, Type: item.Type})
+			suggestion := InlineResultSuggestion{ID: item.ID, QueryID: queryID, Title: title, Description: description, Type: item.Type}
+			if doc, ok := item.GetDocument(); ok {
+				applyInlineResultDocument(&suggestion, doc)
+			}
+			out = append(out, suggestion)
 		}
 	}
 	return out
+}
+
+// applyInlineResultDocument copies the size/dimension metadata a GIF or video inline result
+// carries. These bots usually omit Title and Description, so this is the only thing that
+// distinguishes one row from the next.
+func applyInlineResultDocument(out *InlineResultSuggestion, doc tg.DocumentClass) {
+	d, ok := doc.(*tg.Document)
+	if !ok {
+		return
+	}
+	out.Size = d.Size
+	out.MimeType = d.MimeType
+	// Thumb-only attachment: the grid renders from the JPEG thumbnail, never the full
+	// animation, so a panel of results costs a handful of small downloads.
+	if thumb := bestPhotoSize(d.Thumbs); thumb != "" {
+		out.Thumb = MediaAttachment{
+			Kind:          "photo",
+			DownloadKey:   fmt.Sprintf("document:%d", d.ID),
+			DocumentID:    d.ID,
+			AccessHash:    d.AccessHash,
+			FileReference: append([]byte(nil), d.FileReference...),
+			ThumbSize:     thumb,
+		}
+	}
+	for _, attr := range d.Attributes {
+		switch a := attr.(type) {
+		case *tg.DocumentAttributeVideo:
+			out.Width = a.W
+			out.Height = a.H
+			out.Duration = int(a.Duration)
+		case *tg.DocumentAttributeImageSize:
+			if out.Width == 0 && out.Height == 0 {
+				out.Width = a.W
+				out.Height = a.H
+			}
+		}
+	}
+}
+
+// InlineThumbCols/InlineThumbRows are the cell size of one inline-result thumbnail. The
+// backend renders at this size and the grid lays out cells to match, so both sides agree
+// without the UI having to send dimensions with every request.
+const (
+	InlineThumbCols = 16
+	InlineThumbRows = 6
+)
+
+// fetchInlineThumb downloads and renders one inline result's thumbnail. Only cells the grid
+// actually shows are requested, and stale replies are dropped by RequestID on the UI side.
+func (c *GotdClient) fetchInlineThumb(ctx context.Context, api *tg.Client, events chan<- Event, cmd Command) {
+	if api == nil || cmd.Media.DocumentID == 0 || cmd.Media.ThumbSize == "" {
+		return
+	}
+	path, err := c.ensureDocumentThumb(ctx, api, cmd.Media)
+	if err != nil || path == "" {
+		return
+	}
+	preview := termmedia.RenderTerminalPreview(path, InlineThumbCols, InlineThumbRows)
+	if preview == "" {
+		return
+	}
+	sendEvent(ctx, events, Event{
+		Kind:         EventInlineResultThumb,
+		RequestID:    cmd.RequestID,
+		ResultID:     cmd.ResultID,
+		ThumbPreview: preview,
+	})
 }
 
 func (c *GotdClient) sendInlineResult(ctx context.Context, accountID string, api *tg.Client, events chan<- Event, cmd Command) {

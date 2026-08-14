@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/gotd/td/tg"
 
@@ -43,6 +44,43 @@ func (c *GotdClient) loadPeerPinnedMessage(ctx context.Context, accountID string
 		sendEvent(ctx, events, Event{Kind: EventPeerPinned, PeerKey: peerKey, PinnedPreview: preview})
 	}
 }
+
+// loadPinnedMessageList fetches every pinned message in a peer. Telegram exposes this as a
+// search with the pinned filter, which is what Desktop's "Pinned messages" list uses; the
+// full-chat pinned_msg_id only ever names the most recent one.
+func (c *GotdClient) loadPinnedMessageList(ctx context.Context, accountID string, api *tg.Client, events chan<- Event, peerKey string) {
+	if c.store == nil || api == nil {
+		return
+	}
+	p, ok, err := c.store.Peer(ctx, accountID, peerKey)
+	if err != nil || !ok {
+		return
+	}
+	peer, err := inputPeer(p)
+	if err != nil {
+		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: peerKey, Error: fmt.Errorf("pinned messages: %w", err)})
+		return
+	}
+	res, err := api.MessagesSearch(ctx, &tg.MessagesSearchRequest{
+		Peer:   peer,
+		Filter: &tg.InputMessagesFilterPinned{},
+		Limit:  pinnedListLimit,
+	})
+	if err != nil {
+		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: peerKey, Error: fmt.Errorf("pinned messages: %w", err)})
+		return
+	}
+	stored := c.normalizeMessagesWithPreview(ctx, api, accountID, peerKey, res, false)
+	// Newest pin first, matching Desktop's ordering in the pinned list.
+	sort.SliceStable(stored, func(i, j int) bool { return stored[i].ID > stored[j].ID })
+	sendEvent(ctx, events, Event{
+		Kind:     EventPinnedMessages,
+		PeerKey:  peerKey,
+		Messages: c.telegramMessages(ctx, accountID, stored),
+	})
+}
+
+const pinnedListLimit = 50
 
 func (c *GotdClient) pinnedMessageID(ctx context.Context, api *tg.Client, p storage.Peer) (int, error) {
 	switch p.Kind {

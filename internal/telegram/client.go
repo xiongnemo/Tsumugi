@@ -1152,12 +1152,14 @@ func viaBotUsername(msg *tg.Message, entities entitiesByID) string {
 	return ""
 }
 
+// chatSubtitle is the chat kind only ("private"/"group"/"channel"/...). It must stay a bare
+// kind token: i18n.ChatKind translates it by exact match, and folder rules compare it with
+// ==, so appending anything here silently breaks both.
 func chatSubtitle(p storage.Peer) string {
-	parts := []string{p.Subtitle}
-	if p.LastPreview != "" {
-		parts = append(parts, p.LastPreview)
+	if p.Subtitle != "" {
+		return p.Subtitle
 	}
-	return stringsJoin(parts...)
+	return p.Kind
 }
 
 func userTitle(u *tg.User) string {
@@ -1224,6 +1226,12 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				go c.queryInlineBot(ctx, accountID, api, events, command)
 			case CommandSendInlineResult:
 				c.sendInlineResult(ctx, accountID, api, events, command)
+			case CommandLoadPinned:
+				go c.loadPinnedMessageList(ctx, accountID, api, events, command.PeerKey)
+			case CommandJumpToMessage:
+				go c.jumpToMessage(ctx, accountID, api, events, command.PeerKey, command.MessageID)
+			case CommandFetchInlineThumb:
+				go c.fetchInlineThumb(ctx, api, events, command)
 			}
 		}
 	}

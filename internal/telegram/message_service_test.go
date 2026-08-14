@@ -7,6 +7,7 @@ import (
 	"github.com/gotd/td/tg"
 
 	"github.com/nemo/Tsumugi/internal/i18n"
+	"github.com/nemo/Tsumugi/internal/storage"
 )
 
 func init() {
@@ -162,5 +163,37 @@ func TestNormalizeTGServiceMessage(t *testing.T) {
 		Action: &tg.MessageActionEmpty{},
 	}, testEntities()); ok {
 		t.Fatal("empty action produced a storage row")
+	}
+}
+
+func TestChatSubtitleIsBareKind(t *testing.T) {
+	// i18n.ChatKind matches by exact string and folder rules compare with ==, so the
+	// subtitle must stay a bare kind token even when a preview exists.
+	got := chatSubtitle(storage.Peer{Kind: "channel", Subtitle: "group", LastPreview: "[Photo]"})
+	if got != "group" {
+		t.Fatalf("chatSubtitle = %q, want %q", got, "group")
+	}
+	if fallback := chatSubtitle(storage.Peer{Kind: "channel"}); fallback != "channel" {
+		t.Fatalf("chatSubtitle fallback = %q, want kind", fallback)
+	}
+}
+
+func TestServiceMessageCarriesPinnedReplyTarget(t *testing.T) {
+	client := &GotdClient{}
+	msg := &tg.MessageService{
+		ID:     900,
+		Date:   1700000000,
+		PeerID: &tg.PeerChat{ChatID: 3},
+		Action: &tg.MessageActionPinMessage{},
+	}
+	msg.SetReplyTo(&tg.MessageReplyHeader{ReplyToMsgID: 512})
+
+	got, ok := client.normalizeTGServiceMessage("user:1", "chat:3", msg, testEntities())
+	if !ok {
+		t.Fatal("normalizeTGServiceMessage returned !ok")
+	}
+	// Without this the UI cannot offer "jump to pinned message" from the system row.
+	if got.ReplyToID != 512 {
+		t.Fatalf("ReplyToID = %d, want 512", got.ReplyToID)
 	}
 }

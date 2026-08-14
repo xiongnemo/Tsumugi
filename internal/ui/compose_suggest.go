@@ -11,6 +11,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"github.com/nemo/Tsumugi/internal/render"
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
 
@@ -39,6 +40,8 @@ type composeToken struct {
 
 type composeSuggestState struct {
 	panel *tview.List
+	// grid replaces the list for inline bot results, which are usually titleless media.
+	grid  *inlineResultGrid
 	ghost *tview.TextView
 
 	mode        composeSuggestMode
@@ -79,7 +82,7 @@ func newComposeSuggestState(theme Theme) *composeSuggestState {
 		SetDynamicColors(true).
 		SetTextColor(theme.Dim).
 		SetWrap(false)
-	return &composeSuggestState{panel: panel, ghost: ghost}
+	return &composeSuggestState{panel: panel, grid: newInlineResultGrid(theme), ghost: ghost}
 }
 
 func parseComposeToken(text string) composeToken {
@@ -255,18 +258,24 @@ func (a *App) applyComposeSuggestions(event telegram.Event) {
 		if a.suggest.mode != composeSuggestInline || event.Query != a.suggest.token.Query || event.BotUsername != a.suggest.token.BotUsername {
 			return
 		}
-		for _, item := range event.InlineResults {
+		for i, item := range event.InlineResults {
 			main := item.Title
 			if main == "" {
-				main = item.Type
+				// GIF/video bots return no title, so number the rows and fall back to the
+				// result type; otherwise every row reads the same and cannot be told apart.
+				main = fmt.Sprintf("%d. %s", i+1, item.Type)
 			}
-			if main == "" {
+			if strings.TrimSpace(main) == "" {
 				main = item.ID
+			}
+			secondary := item.Description
+			if secondary == "" {
+				secondary = render.InlineResultDetail(item)
 			}
 			items = append(items, composeSuggestItem{
 				Kind:      composeSuggestInline,
 				Main:      main,
-				Secondary: item.Description,
+				Secondary: secondary,
 				Inline:    item,
 			})
 		}
@@ -320,20 +329,55 @@ func (a *App) renderComposeSuggestions() {
 		return
 	}
 	open := a.suggest.mode != composeSuggestNone && (a.suggest.loading || len(a.suggest.items) > 0)
+	// Inline bot results are drawn as a thumbnail grid; mentions and commands stay a list.
+	useGrid := open && a.suggest.mode == composeSuggestInline && len(a.suggest.items) > 0
+	if len(a.suggest.items) > 0 {
+		if a.suggest.highlighted >= len(a.suggest.items) {
+			a.suggest.highlighted = len(a.suggest.items) - 1
+		}
+		if a.suggest.highlighted < 0 {
+			a.suggest.highlighted = 0
+		}
+	}
+	panelRows := composeSuggestPanelRows
+	if useGrid {
+		results := make([]telegram.InlineResultSuggestion, 0, len(a.suggest.items))
+		for _, item := range a.suggest.items {
+			results = append(results, item.Inline)
+		}
+		a.suggest.grid.SetResults(results)
+		a.suggest.grid.SetSelected(a.suggest.highlighted)
+		a.suggest.grid.SetTitle(" " + a.composeSuggestHeader() + " ")
+		a.suggest.grid.onAccept = func(index int) { a.acceptComposeSuggestion(index) }
+		panelRows = inlineGridPanelHeight(len(results), a.inlineGridInnerWidth())
+		a.requestInlineThumbs(results)
+	}
 	if a.composeStack != nil {
 		composeRows := 4
 		if open {
-			a.composeStack.ResizeItem(a.suggest.panel, composeSuggestPanelRows, 0)
+			if useGrid {
+				a.composeStack.ResizeItem(a.suggest.panel, 0, 0)
+				a.composeStack.ResizeItem(a.suggest.grid, panelRows, 0)
+			} else {
+				a.composeStack.ResizeItem(a.suggest.grid, 0, 0)
+				a.composeStack.ResizeItem(a.suggest.panel, panelRows, 0)
+			}
 			if a.rightPane != nil {
-				composeRows = composeSuggestPanelRows + 4
+				composeRows = panelRows + 4
 				a.rightPane.ResizeItem(a.composeStack, composeRows, 0)
 			}
 		} else {
 			a.composeStack.ResizeItem(a.suggest.panel, 0, 0)
+			a.composeStack.ResizeItem(a.suggest.grid, 0, 0)
 			if a.rightPane != nil {
 				a.rightPane.ResizeItem(a.composeStack, composeRows, 0)
 			}
 		}
+	}
+	if useGrid {
+		a.suggest.panel.Clear()
+		a.renderComposeGhost()
+		return
 	}
 	a.suggest.panel.Clear()
 	a.suggest.panel.SetTitle(" " + a.composeSuggestHeader() + " ")
@@ -344,12 +388,6 @@ func (a *App) renderComposeSuggestions() {
 		})
 	}
 	if len(a.suggest.items) > 0 {
-		if a.suggest.highlighted >= len(a.suggest.items) {
-			a.suggest.highlighted = len(a.suggest.items) - 1
-		}
-		if a.suggest.highlighted < 0 {
-			a.suggest.highlighted = 0
-		}
 		a.suggest.panel.SetCurrentItem(a.suggest.highlighted)
 	}
 	a.renderComposeGhost()
@@ -422,9 +460,12 @@ func (a *App) closeComposeSuggestions() {
 	a.suggest.more = false
 	a.suggest.panel.Clear()
 	a.suggest.panel.SetTitle("")
+	a.suggest.grid.SetResults(nil)
+	a.suggest.grid.SetTitle("")
 	a.suggest.ghost.SetText("")
 	if a.composeStack != nil {
 		a.composeStack.ResizeItem(a.suggest.panel, 0, 0)
+		a.composeStack.ResizeItem(a.suggest.grid, 0, 0)
 	}
 	if a.rightPane != nil {
 		a.rightPane.ResizeItem(a.composeStack, 4, 0)
@@ -437,6 +478,23 @@ func (a *App) captureComposeSuggestions(event *tcell.EventKey) bool {
 	}
 	if len(a.suggest.items) == 0 && !a.suggest.loading {
 		return false
+	}
+	if a.suggest.mode == composeSuggestInline && len(a.suggest.items) > 0 {
+		// Grid navigation: left/right within a row, up/down by a whole row.
+		switch event.Key() {
+		case tcell.KeyLeft:
+			a.moveComposeSuggestionGrid(-1, 0)
+			return true
+		case tcell.KeyRight:
+			a.moveComposeSuggestionGrid(1, 0)
+			return true
+		case tcell.KeyUp:
+			a.moveComposeSuggestionGrid(0, -1)
+			return true
+		case tcell.KeyDown:
+			a.moveComposeSuggestionGrid(0, 1)
+			return true
+		}
 	}
 	switch event.Key() {
 	case tcell.KeyUp:
@@ -549,4 +607,69 @@ func utf16Len(text string) int {
 		}
 	}
 	return n
+}
+
+// inlineGridInnerWidth is the width available for grid cells, used both for layout and for
+// deciding how many rows the panel needs.
+func (a *App) inlineGridInnerWidth() int {
+	if a.suggest == nil || a.suggest.grid == nil {
+		return inlineCellWidth
+	}
+	_, _, width, _ := a.suggest.grid.GetInnerRect()
+	if width <= 0 {
+		// Before the first draw the primitive has no rect yet; assume one row so the panel
+		// opens at a sane height and re-lays out once tview assigns geometry.
+		return inlineCellWidth * composeSuggestMaxVisible
+	}
+	return width
+}
+
+// moveComposeSuggestionGrid steps the highlight through the thumbnail grid and keeps the
+// shared highlighted index in sync so Enter accepts the same item the grid draws as selected.
+func (a *App) moveComposeSuggestionGrid(dx, dy int) {
+	if a.suggest == nil || a.suggest.grid == nil || len(a.suggest.items) == 0 {
+		return
+	}
+	a.suggest.grid.MoveSelection(dx, dy)
+	a.suggest.highlighted = a.suggest.grid.Selected()
+	a.renderComposeGhost()
+}
+
+// requestInlineThumbs asks for thumbnails the grid does not have yet. Only results currently
+// in the panel are fetched, so this stays bounded no matter how much the user types.
+func (a *App) requestInlineThumbs(results []telegram.InlineResultSuggestion) {
+	if a.suggest == nil || a.suggest.grid == nil {
+		return
+	}
+	requestID := a.suggest.requestID
+	for _, result := range results {
+		if result.Thumb.DocumentID == 0 || result.Thumb.ThumbSize == "" {
+			continue
+		}
+		if a.suggest.grid.HasPreview(result.ID) {
+			continue
+		}
+		select {
+		case a.commands <- telegram.Command{
+			Kind:      telegram.CommandFetchInlineThumb,
+			RequestID: requestID,
+			ResultID:  result.ID,
+			Media:     result.Thumb,
+		}:
+		default:
+			return
+		}
+	}
+}
+
+// applyInlineThumb stores one rendered thumbnail. Replies for a superseded query are dropped
+// so a fast typist does not see thumbnails from an earlier search.
+func (a *App) applyInlineThumb(event telegram.Event) {
+	if a.suggest == nil || a.suggest.grid == nil {
+		return
+	}
+	if event.RequestID != a.suggest.requestID || a.suggest.mode != composeSuggestInline {
+		return
+	}
+	a.suggest.grid.SetPreview(event.ResultID, event.ThumbPreview)
 }

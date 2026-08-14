@@ -163,7 +163,6 @@
   "status.copy_failed": "[red]copy failed: %s",
   "status.copied_text": "Copied message text.",
   "status.not_a_reply": "Selected message is not a reply.",
-  "status.jumped_to_reply": "Jumped to replied message.",
   "status.reply_loading_older": "Reply target is not in the current buffer; loading older messages...",
   "status.reply_target_set": "Reply target set; type your response.",
   "status.layout_mode": "Layout: %s",
@@ -314,5 +313,15 @@
   "service.giveaway_results": "giveaway ended",
   "service.suggest_profile_photo": "suggested a profile photo",
   "service.custom": "%s",
-  "service.unsupported": "system message"
+  "service.unsupported": "system message",
+
+  "ui.footer_pinned": "# pinned",
+  "pinned.title": "Pinned messages (%d)",
+  "pinned.title_short": "Pinned messages",
+  "pinned.empty": "No pinned messages in this chat",
+  "pinned.hint": "Enter jump to message · Esc close",
+  "status.loading_pinned": "Loading pinned messages...",
+  "pinned.loading": "Loading pinned messages...",
+  "status.jumping_to_message": "Jumping to message...",
+  "status.jumped_to_message": "Jumped to message."
 }

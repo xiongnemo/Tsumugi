@@ -765,3 +765,46 @@ func TestChatsVisibleIndexFromListIndexSkipsWelcomeRow(t *testing.T) {
 		t.Fatalf("third row: got %d, want 1", got)
 	}
 }
+
+// A delete arriving from another session emits EventMessages carrying only RemoveMessageIDs.
+// Treating that as a full replace blanked the entire conversation.
+func TestRemovalOnlyEventKeepsRemainingMessages(t *testing.T) {
+	app := &App{
+		messages: NewMessageViewport(),
+	}
+	app.setMessages([]telegram.Message{
+		{ID: "10", Text: "first", CreatedAt: time.Unix(10, 0)},
+		{ID: "11", Text: "second", CreatedAt: time.Unix(11, 0)},
+		{ID: "12", Text: "third", CreatedAt: time.Unix(12, 0)},
+	}, false)
+
+	app.applyEvent(telegram.Event{
+		Kind:             telegram.EventMessages,
+		RemoveMessageIDs: []string{"11"},
+	})
+
+	if app.selectMessageByID("11") {
+		t.Fatal("deleted message is still present")
+	}
+	for _, id := range []string{"10", "12"} {
+		if !app.selectMessageByID(id) {
+			t.Fatalf("message %s was wiped by a removal-only event", id)
+		}
+	}
+}
+
+// A genuine replace with an empty list must still clear, e.g. opening a chat with no history.
+func TestEmptyReplaceStillClearsMessages(t *testing.T) {
+	app := &App{
+		messages: NewMessageViewport(),
+	}
+	app.setMessages([]telegram.Message{
+		{ID: "10", Text: "first", CreatedAt: time.Unix(10, 0)},
+	}, false)
+
+	app.applyEvent(telegram.Event{Kind: telegram.EventMessages})
+
+	if app.selectMessageByID("10") {
+		t.Fatal("empty replace did not clear the viewport")
+	}
+}

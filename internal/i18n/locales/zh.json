@@ -163,7 +163,6 @@
   "status.copy_failed": "[red]复制失败：%s",
   "status.copied_text": "已复制消息文本。",
   "status.not_a_reply": "所选消息不是回复。",
-  "status.jumped_to_reply": "已跳转到被回复的消息。",
   "status.reply_loading_older": "回复目标不在当前缓冲区，正在加载更早的消息…",
   "status.reply_target_set": "已设置回复目标，请输入回复。",
   "status.layout_mode": "布局: %s",
@@ -314,5 +313,15 @@
   "service.giveaway_results": "抽奖已结束",
   "service.suggest_profile_photo": "建议了一张头像",
   "service.custom": "%s",
-  "service.unsupported": "系统消息"
+  "service.unsupported": "系统消息",
+
+  "ui.footer_pinned": "# 置顶",
+  "pinned.title": "置顶消息（%d）",
+  "pinned.title_short": "置顶消息",
+  "pinned.empty": "此会话没有置顶消息",
+  "pinned.hint": "Enter 跳转 · Esc 关闭",
+  "status.loading_pinned": "正在加载置顶消息……",
+  "pinned.loading": "正在加载置顶消息……",
+  "status.jumping_to_message": "正在跳转到消息……",
+  "status.jumped_to_message": "已跳转到消息。"
 }

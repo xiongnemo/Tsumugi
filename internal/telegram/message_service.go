@@ -190,6 +190,14 @@ func (c *GotdClient) normalizeTGServiceMessage(accountID, peerKey string, msg *t
 			senderName = userTitle(u)
 		}
 	}
+	// Pin service messages point at the message they pinned, which is what makes
+	// "jump to pinned message" possible from the system row.
+	replyID := 0
+	if reply, ok := msg.GetReplyTo(); ok {
+		if header, ok := reply.(*tg.MessageReplyHeader); ok {
+			replyID = header.ReplyToMsgID
+		}
+	}
 	return storage.Message{
 		AccountID:   accountID,
 		PeerKey:     peerKey,
@@ -201,6 +209,7 @@ func (c *GotdClient) normalizeTGServiceMessage(accountID, peerKey string, msg *t
 		SenderName:  senderName,
 		SenderColor: senderColor(senderKind, senderID, senderName),
 		Outgoing:    msg.Out,
+		ReplyToID:   replyID,
 		State:       "synced",
 		ServiceKey:  action.Key,
 		ServiceArg:  action.Arg,

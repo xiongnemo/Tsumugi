@@ -135,6 +135,13 @@ const (
 	KeyUIFooterProxy          = "ui.footer_proxy"
 	KeyUIFooterQuit           = "ui.footer_quit"
 	KeyUIFooterProxyActive    = "ui.footer_proxy_active"
+	KeyUIFooterPinned         = "ui.footer_pinned"
+
+	KeyPinnedTitle      = "pinned.title"
+	KeyPinnedTitleShort = "pinned.title_short"
+	KeyPinnedEmpty      = "pinned.empty"
+	KeyPinnedLoading    = "pinned.loading"
+	KeyPinnedHint       = "pinned.hint"
 
 	KeyStatusConnecting               = "status.connecting"
 	KeyStatusConnectedAs              = "status.connected_as"
@@ -202,7 +209,6 @@ const (
 	KeyStatusCopyFailed               = "status.copy_failed"
 	KeyStatusCopiedText               = "status.copied_text"
 	KeyStatusNotAReply                = "status.not_a_reply"
-	KeyStatusJumpedToReply            = "status.jumped_to_reply"
 	KeyStatusReplyLoadingOlder        = "status.reply_loading_older"
 	KeyStatusReplyTargetSet           = "status.reply_target_set"
 	KeyStatusLayoutMode               = "status.layout_mode"
@@ -214,6 +220,9 @@ const (
 	KeyStatusNoMatchingChat           = "status.no_matching_chat"
 	KeyStatusFoundMessage             = "status.found_message"
 	KeyStatusNoMatchingMessage        = "status.no_matching_message"
+	KeyStatusJumpingToMessage         = "status.jumping_to_message"
+	KeyStatusJumpedToMessage          = "status.jumped_to_message"
+	KeyStatusLoadingPinned            = "status.loading_pinned"
 	KeyStatusAuthEmpty                = "status.auth_empty"
 	KeyStatusAuthSubmitted            = "status.auth_submitted"
 
