@@ -31,7 +31,16 @@ Use dot-separated prefixes:
 | `proxy.*` | Proxy settings modal |
 | `media.*` | Media placeholders and cache hints |
 | `message.*` | Message row states (`(sending)`, `(empty)`, …) |
+| `service.*` | Telegram service/system messages (joins, pins, title changes, …) |
 | `settings.*` | Settings hub |
+
+### `service.*` keys take at most one argument
+
+A `service.*` template either contains exactly one `%s` or none, and
+`telegram.classifyMessageAction` guarantees an argument is supplied precisely when the
+template has one. If you translate a `service.*` string, keep the placeholder exactly as it
+is in `en.json`: adding one where English has none renders a literal `%s`, and dropping one
+renders a `%!(EXTRA …)` suffix. `TestServiceActionArgMatchesTemplate` checks both locales.
 
 ## Adding a string
 
