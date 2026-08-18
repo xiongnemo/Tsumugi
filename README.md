@@ -2,13 +2,64 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-Tsumugi is a Telegram TUI client written in Go.
+Tsumugi is a Telegram client that runs in your terminal.
 
-The MVP uses `gotd/td` as a pure Go MTProto backend and `tview`/`tcell` for the
+It uses `gotd/td` as a pure Go MTProto backend and `tview`/`tcell` for the
 terminal UI. User login and bot login use different authentication flows, then
-share the same Telegram API adapter after authentication.
+share the same Telegram API adapter after authentication. Everything ships as one
+static executable with no runtime dependencies — `ffmpeg` is optional and only
+affects inline video animation.
 
-## Current MVP
+## Install
+
+### Scoop (Windows)
+
+```pwsh
+scoop bucket add nemo https://github.com/xiongnemo/windows-binaries-scoop-bucket
+scoop install nemo/tsumugi-nightly
+```
+
+This tracks `dev` prereleases, which is currently the only release channel.
+
+### Prebuilt binaries
+
+Download an archive from [Releases](https://github.com/xiongnemo/Tsumugi/releases)
+and extract the single executable. Assets are named
+`tsumugi_<version>_<os>_<arch>` (`.zip` for Windows, `.tar.gz` elsewhere) and each
+release ships a `checksums_<version>.txt`. Builds are published for Windows,
+Linux, macOS, FreeBSD, and OpenBSD on `amd64` and `arm64`.
+
+### From source
+
+Requires Go 1.26 or newer:
+
+```bash
+git clone https://github.com/xiongnemo/Tsumugi
+cd Tsumugi
+go build -trimpath -o tsumugi ./cmd/tsumugi
+```
+
+`go install` from a module path does not work yet: the module is declared as
+`github.com/nemo/Tsumugi` while the repository lives at
+`github.com/xiongnemo/Tsumugi`, so Go cannot resolve it. Clone and build instead.
+
+## Quick start
+
+1. Create Telegram API credentials at <https://my.telegram.org/apps>. You need
+   the **API ID** and **API hash**.
+2. Run `tsumugi`. With no credentials saved, the first-run wizard asks for your
+   language, login mode, API ID/hash, and phone number, then hands off to
+   Telegram's code and 2FA prompts.
+3. `Tab` cycles panes: folders → chats → messages → composer. `Enter` opens the
+   highlighted chat, `i` jumps to the composer, `?` opens settings, `q` quits.
+4. Credentials are saved locally, encrypted, so later starts go straight to the
+   chat list.
+
+The full key list is under [Keybindings](#keybindings). Nothing needs to be
+configured up front — the sections below are for proxies, scripted setups, and
+behaviour you may want to change.
+
+## Features
 
 - User login with phone/code/2FA through `gotd/td`.
 - Bot login with a bot token through the same backend.
@@ -46,11 +97,25 @@ share the same Telegram API adapter after authentication.
 - Text message sending for the selected peer, including reply targets from the
   message action menu.
 - Compose suggestions for `@` mentions, `@inline_bot query` inline results, and
-  `/` bot commands in the current chat.
+  `/` bot commands in the current chat. Inline bot results render as a grid of
+  thumbnails rather than a list.
+- Reactions: existing reactions appear under a message, and **`R`** opens a panel
+  showing counts and recent reactors with number-key quick picks.
+- Read state per peer type: `✓`/`✓✓` for private chats, a read count for groups,
+  and view counts (👁) for broadcast channel posts.
+- Pinned messages: the newest pin shows as a banner above the conversation, and
+  **`#`** expands it into the full pinned list with jump-to-message.
+- Jump to a message by loading a window centred on it, used by the pinned list and
+  by "jump to replied message". Targets far outside the loaded history arrive in
+  one request rather than by paging backwards.
+- Switchable outgoing message layout (**`L`**): `transcript` (single column) or
+  `im` (incoming left, outgoing right).
 - Media classification for emoji-preserving text, static stickers, animated
   stickers, video stickers, GIF animations, videos, photos, and documents.
 - Media cache/opening boundaries and a pure Go terminal half-block renderer for
   image/sticker thumbnails (no external image-to-terminal CLI).
+- Bilingual interface (English and 简体中文), switchable at runtime, with
+  translations in editable JSON files.
 
 Inline previews use Unicode half-blocks with true-color ANSI, converted for
 `tview`. Message detail opens a right-column preview sized from the layout after
@@ -191,6 +256,7 @@ UI labels. Editable profiles are stored in the local SQLite database.
 ## Keybindings
 
 - `Tab`: switch focus between folders, chat list, message view, and composer
+- `Shift+Tab`: move focus to the previous pane
 - `j`/`k` or arrow keys in message view: select messages
 - `Enter`: open chat, send composer text, or open the selected message action
   menu
@@ -214,9 +280,12 @@ UI labels. Editable profiles are stored in the local SQLite database.
   `Enter` accepts it, and `Esc` closes the panel without clearing typed text.
   Rows can also be clicked with the mouse.
 - `/`: search the focused view
+- `L`: toggle outgoing message layout (message pane)
+- `R`: open the reaction panel for the selected message
+- `#`: expand the pinned banner into the full pinned message list
 - `D`: download/cache the selected message media preview
 - `O`: open the selected message media preview externally
-- `?`: open settings (General and Network)
+- `?`: open settings (General, Account, Network)
 - `P`: show proxy settings
 - `Esc`: close modal and return to chat list
 - `q` or `Ctrl+C`: quit
@@ -232,6 +301,26 @@ Compose suggestion limits: mention and command panels show at most five visible
 entries. Inline bots that require location are reported as unsupported in this
 MVP.
 
+## Not there yet
+
+Known gaps, so you can tell a missing feature from a bug:
+
+- Repeat-search navigation (`n`/`N`) is not implemented; search jumps to a match
+  but does not step through the rest.
+- Sending is text-only. There is no upload path for photos, files, or voice.
+- No message editing, forwarding, or search across all chats.
+- Read receipts for supergroups are not wired up (private chats, groups, and
+  broadcast channels are).
+- Animated stickers (`.tgs` Lottie) show a static preview or placeholder; there is
+  no terminal Lottie renderer.
+- Inline animation of MP4/WebM needs `ffmpeg` in `PATH`. Without it those messages
+  still show a static thumbnail.
+- No QR login yet; user login is phone + code + 2FA.
+- Tsumugi does not read a config file. Settings live in SQLite, with environment
+  variables and CLI flags as overrides.
+- Bot mode is a bot console, not a personal client: Telegram only delivers what a
+  bot is allowed to receive.
+
 ## Development
 
 Use the Go module proxy recommended for constrained networks:
@@ -245,3 +334,20 @@ Build a single executable:
 ```pwsh
 $env:GOPROXY='https://goproxy.cn,direct'; New-Item -ItemType Directory -Force -Path .\dist | Out-Null; go build -trimpath -o .\dist\tsumugi.exe .\cmd\tsumugi
 ```
+
+Bash equivalents:
+
+```bash
+export GOPROXY='https://goproxy.cn,direct'
+go test ./...
+mkdir -p ./dist && go build -trimpath -o ./dist/tsumugi ./cmd/tsumugi
+```
+
+Release builds are `CGO_ENABLED=0` and stamp the version through `-ldflags -X`
+into `internal/version`, producing
+`v{major}.{minor}.{patch}-{branch}-{commit12}[-dirty]`. `tsumugi --version` prints
+it. Without ldflags the binary falls back to `debug.ReadBuildInfo()`, so `go run`
+still reports useful VCS metadata.
+
+See [`AGENTS.md`](AGENTS.md) for repository conventions and
+[`internal/i18n/README.md`](internal/i18n/README.md) for adding translations.
