@@ -27,6 +27,7 @@ const (
 	EventDraft                   EventKind = "draft"
 	EventTyping                  EventKind = "typing"
 	EventReadInbox               EventKind = "read_inbox"
+	EventSearchResults           EventKind = "search_results"
 )
 
 type Event struct {
@@ -83,6 +84,9 @@ type Event struct {
 	WindowedHistory bool
 	// FirstUnreadID is the message to draw the unread divider above, when there is one.
 	FirstUnreadID string
+	// SearchHits carries a completed search. RequestID gates it, so a slow earlier search
+	// cannot overwrite the results of a newer one.
+	SearchHits []SearchHit
 }
 
 // BackgroundKind identifies low-priority work shown in the status bar right column.
@@ -197,6 +201,7 @@ const (
 	CommandSetTyping        CommandKind = "set_typing"
 	CommandMarkRead         CommandKind = "mark_read"
 	CommandForwardMessages  CommandKind = "forward_messages"
+	CommandSearchMessages   CommandKind = "search_messages"
 )
 
 type Command struct {
@@ -224,6 +229,8 @@ type Command struct {
 	ForwardIDs        []string
 	ForwardTarget     string
 	ForwardDropAuthor bool
+	// SearchScope is "chat" or "global"; see SearchScope.
+	SearchScope string
 }
 
 type MentionSuggestion struct {

@@ -115,6 +115,14 @@ type App struct {
 	forwardInput      *tview.InputField
 	forwardSource     string
 	forwardDropAuthor bool
+	// Search state. searchCursor is a hit identity, not an index, so a viewport replacement
+	// cannot silently repoint it at a different result.
+	searchList      *tview.List
+	searchHits      []telegram.SearchHit
+	searchCursor    string
+	searchQuery     string
+	searchScope     string
+	searchRequestID int64
 }
 
 func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
@@ -378,6 +386,10 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 			a.closeForwardPicker()
 			return nil
 		}
+		if a.searchList != nil {
+			a.closeSearchResults()
+			return nil
+		}
 		// Clearing a pending mark set comes before falling back to the chat list, so Esc
 		// always has an obvious local meaning first.
 		if a.clearForwardMarks() {
@@ -423,6 +435,12 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 			a.messages.SelectDelta(-1)
 			return nil
 		}
+	case 'n':
+		a.stepSearch(1)
+		return nil
+	case 'N':
+		a.stepSearch(-1)
+		return nil
 	case 'v':
 		if focus == a.messages {
 			a.toggleForwardMark()
@@ -442,6 +460,8 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		if focus == a.messages && a.returnToTail() {
 			return nil
 		}
+		a.showSearchWithScope("global")
+		return nil
 	case 'q':
 		a.flushDraft(a.currentChat)
 		a.flushMarkRead()
@@ -497,9 +517,6 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		}
 	case '/':
 		a.showSearch()
-		return nil
-	case 'n', 'N':
-		a.setStatusMsg(i18n.KeyStatusSearchNavHint)
 		return nil
 	}
 	return event
@@ -648,6 +665,8 @@ func (a *App) applyEvent(event telegram.Event) {
 		a.applyTypingEvent(event)
 	case telegram.EventReadInbox:
 		a.applyReadInboxEvent(event)
+	case telegram.EventSearchResults:
+		a.applySearchResultsEvent(event)
 	case telegram.EventReadOutbox:
 		if event.PeerKey == a.currentChat && strings.HasPrefix(event.PeerKey, "user:") {
 			a.messages.ApplyReadOutboxMaxID(event.ReadOutboxMaxID, true)
@@ -1408,6 +1427,12 @@ func copyText(text string) error {
 }
 
 func (a *App) showSearch() {
+	a.showSearchWithScope("")
+}
+
+// showSearchWithScope opens the search form. An empty forceScope picks the scope from the focused
+// pane, which is what '/' does; 'G' passes "global" to go straight to searching every chat.
+func (a *App) showSearchWithScope(forceScope string) {
 	// No composer branch here: capture returns early while a text input has focus, so '/'
 	// never reaches the search key and is typed into the composer directly.
 	focus := a.app.GetFocus()
@@ -1417,11 +1442,28 @@ func (a *App) showSearch() {
 		scope = "chats"
 		label = i18n.T(i18n.KeySearchLabelChats)
 	}
+	if forceScope != "" {
+		scope = forceScope
+	}
+	// Order matches searchScopeValues; the dropdown is pre-set from the focused pane so the
+	// common case needs no interaction with it.
+	scopeIndex := 0
+	for i, value := range searchScopeValues {
+		if value == scope {
+			scopeIndex = i
+			break
+		}
+	}
 	input := tview.NewInputField().SetLabel(label).SetFieldWidth(40)
 	form := tview.NewForm().
 		AddFormItem(input).
+		AddDropDown(i18n.T(i18n.KeySearchScopeLabel), searchScopeLabels(), scopeIndex, func(_ string, index int) {
+			if index >= 0 && index < len(searchScopeValues) {
+				scope = searchScopeValues[index]
+			}
+		}).
 		AddButton(i18n.T(i18n.KeySearchButton), func() {
-			a.applySearch(scope, input.GetText())
+			a.runSearch(scope, input.GetText())
 			a.app.SetRoot(a.root, true)
 			a.app.SetFocus(focus)
 			a.updateFocusStyle()
@@ -1434,7 +1476,7 @@ func (a *App) showSearch() {
 	form.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeyUISearch) + " ")
 	panel := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tview.NewBox(), 0, 1, false).
-		AddItem(form, 7, 0, true).
+		AddItem(form, 9, 0, true).
 		AddItem(tview.NewBox(), 0, 1, false)
 	centered := tview.NewFlex().
 		AddItem(tview.NewBox(), 0, 1, false).
@@ -1442,41 +1484,6 @@ func (a *App) showSearch() {
 		AddItem(tview.NewBox(), 0, 1, false)
 	a.app.SetRoot(centered, true)
 	a.app.SetFocus(form)
-}
-
-func (a *App) applySearch(scope, query string) {
-	query = strings.TrimSpace(strings.ToLower(query))
-	if query == "" {
-		a.setStatusMsg(i18n.KeyStatusSearchEmpty)
-		return
-	}
-	switch scope {
-	case "chats":
-		visible := a.visibleChatsForFolder()
-		for _, chat := range a.allChats {
-			if strings.Contains(strings.ToLower(chat.Title+" "+chat.Subtitle+" "+chat.LastPreview), query) {
-				idx := chatIndexByID(visible, chat.ID)
-				if idx < 0 {
-					a.setStatusMsg(i18n.KeyStatusChatOutsideFolder)
-					return
-				}
-				a.chats.SetCurrentItem(idx)
-				a.chatsHighlightPeer = chat.ID
-				a.setStatusMsg(i18n.KeyStatusFoundChat, chat.Title)
-				return
-			}
-		}
-		a.setStatusMsg(i18n.KeyStatusNoMatchingChat)
-	default:
-		for _, msg := range a.messages.Messages() {
-			if strings.Contains(strings.ToLower(msg.Author+" "+msg.Text+" "+msg.Media.Label), query) {
-				a.selectMessageByID(msg.ID)
-				a.setStatusMsg(i18n.KeyStatusFoundMessage, msg.CreatedAt.Local().Format("15:04"))
-				return
-			}
-		}
-		a.setStatusMsg(i18n.KeyStatusNoMatchingMessage)
-	}
 }
 
 func (a *App) showProxySettings() {

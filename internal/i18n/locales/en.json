@@ -348,5 +348,19 @@
   "forward.title_drop_author": "Forward to (without author)",
   "forward.hint": "Type to filter · Enter sends · Esc cancels",
   "forward.saved_messages": "Saved Messages",
-  "forward.filter_label": "Filter: "
+  "forward.filter_label": "Filter: ",
+  "status.searching": "Searching…",
+  "status.search_results": "%d result(s). n / N step through them.",
+  "status.search_no_results": "No results.",
+  "status.search_wrapped": "Wrapped to the %s result.",
+  "status.search_no_more": "No more results.",
+  "status.switched_folder": "Switched to folder %s.",
+  "search.results_title": "Search results",
+  "search.results_hint": "Enter jumps · n / N next / previous · Esc closes",
+  "search.scope_label": "Scope",
+  "search.scope_chat": "This chat",
+  "search.scope_chats": "Chat list",
+  "search.scope_global": "All chats",
+  "search.first": "first",
+  "search.last": "last"
 }

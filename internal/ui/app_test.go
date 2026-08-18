@@ -713,7 +713,7 @@ func TestApplySearchUsesVisibleChatIndex(t *testing.T) {
 		},
 	}
 	app.refreshChats()
-	app.applySearch("chats", "needle")
+	app.runSearch("chats", "needle")
 	if idx := app.chats.GetCurrentItem(); idx != 0 {
 		t.Fatalf("chat search index = %d, want 0 within visible folder", idx)
 	}

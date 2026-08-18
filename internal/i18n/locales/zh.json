@@ -348,5 +348,19 @@
   "forward.title_drop_author": "转发到（不带作者）",
   "forward.hint": "输入以筛选 · Enter 发送 · Esc 取消",
   "forward.saved_messages": "Saved Messages",
-  "forward.filter_label": "筛选："
+  "forward.filter_label": "筛选：",
+  "status.searching": "搜索中…",
+  "status.search_results": "%d 条结果。n / N 逐条跳转。",
+  "status.search_no_results": "没有结果。",
+  "status.search_wrapped": "已回到%s条结果。",
+  "status.search_no_more": "没有更多结果。",
+  "status.switched_folder": "已切换到文件夹 %s。",
+  "search.results_title": "搜索结果",
+  "search.results_hint": "Enter 跳转 · n / N 下一条 / 上一条 · Esc 关闭",
+  "search.scope_label": "范围",
+  "search.scope_chat": "当前会话",
+  "search.scope_chats": "会话列表",
+  "search.scope_global": "全部会话",
+  "search.first": "第一",
+  "search.last": "最后一"
 }

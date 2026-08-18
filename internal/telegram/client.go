@@ -1289,6 +1289,8 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				go c.saveDraft(ctx, accountID, api, events, command)
 			case CommandSetTyping:
 				go c.setTyping(ctx, accountID, api, command.PeerKey, command.Typing)
+			case CommandSearchMessages:
+				go c.searchMessages(ctx, accountID, api, events, command)
 			case CommandForwardMessages:
 				// Must be `go`: forwarding is a network round trip and the command loop
 				// serves every other interaction.

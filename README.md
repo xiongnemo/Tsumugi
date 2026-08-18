@@ -115,6 +115,12 @@ behaviour you may want to change.
 - Compose suggestions for `@` mentions, `@inline_bot query` inline results, and
   `/` bot commands in the current chat. Inline bot results render as a grid of
   thumbnails rather than a list.
+- Message search in three scopes, picked from a dropdown in the search form: the open
+  chat, the chat list, or **all chats** (**`G`**). In-chat search looks at the loaded
+  window first and only asks Telegram when that finds nothing. Results open in a list;
+  **`Enter`** jumps to one, and **`n`** / **`N`** step forward and backward through them
+  with wrap-around. A chat-list match outside the current folder switches to the folder
+  that contains it instead of refusing.
 - Reactions: existing reactions appear under a message, and **`R`** opens a panel
   showing counts and recent reactors with number-key quick picks.
 - Read state per peer type: `✓`/`✓✓` for private chats, a read count for groups,
@@ -302,6 +308,8 @@ UI labels. Editable profiles are stored in the local SQLite database.
   `Enter` accepts it, and `Esc` closes the panel without clearing typed text.
   Rows can also be clicked with the mouse.
 - `/`: search the focused view
+- `n` / `N`: next / previous search result (wraps)
+- `G`: search all chats (chat list / folders), or return to the latest messages (message pane)
 - `v`: mark/unmark the selected message for forwarding
 - `f` / `F`: forward marked messages (`F` drops the original author)
 - `End` / `G`: return to the latest messages while viewing older history
