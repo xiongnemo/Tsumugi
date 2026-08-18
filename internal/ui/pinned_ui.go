@@ -3,7 +3,6 @@ package ui
 import (
 	"strconv"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/nemo/Tsumugi/internal/i18n"
@@ -40,13 +39,8 @@ func (a *App) openPinnedPanel(peerKey string, cached []telegram.Message) {
 		AddItem(list, 0, 1, true).
 		AddItem(hint, 1, 0, false)
 	layout.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeyPinnedTitleShort) + " ")
-	layout.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyEsc {
-			a.closePinnedPanel()
-			return nil
-		}
-		return event
-	})
+	// Esc is handled in App.capture, which runs before this and would swallow it anyway;
+	// see the Esc branch there.
 
 	// Showing the previous result for this chat while the refresh runs keeps a reopen
 	// instant instead of flashing a spinner over content we already had.

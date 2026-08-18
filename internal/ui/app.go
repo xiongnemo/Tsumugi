@@ -316,8 +316,15 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		a.switchFocusPrevious()
 		return nil
 	case tcell.KeyEsc:
+		// Every overlay must be dismissed from here. This capture runs before the focused
+		// primitive and returns nil unconditionally, so an overlay's own SetInputCapture
+		// never sees Esc and any cleanup it does there is dead code.
 		if a.msgActionForm != nil {
 			a.restoreMessageFocus()
+			return nil
+		}
+		if a.pinnedList != nil {
+			a.closePinnedPanel()
 			return nil
 		}
 		a.app.SetRoot(a.root, true)
