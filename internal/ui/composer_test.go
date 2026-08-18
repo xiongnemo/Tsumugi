@@ -216,6 +216,7 @@ func TestSyncComposerLayoutResetsStaleScroll(t *testing.T) {
 	app.composer.SetOffset(1, 0)
 
 	app.syncComposerLayout()
+	app.clampComposerScroll()
 
 	if row, _ := app.composer.GetOffset(); row != 0 {
 		t.Fatalf("row offset = %d, want 0 so the first line is visible again", row)
@@ -233,6 +234,7 @@ func TestSyncComposerLayoutLeavesInRangeScrollAlone(t *testing.T) {
 	app.composer.SetOffset(3, 0)
 
 	app.syncComposerLayout()
+	app.clampComposerScroll()
 
 	if row, _ := app.composer.GetOffset(); row != 3 {
 		t.Fatalf("row offset = %d, want 3 left untouched", row)
@@ -263,9 +265,36 @@ func TestSyncComposerLayoutClampsScrollAfterMultiLinePaste(t *testing.T) {
 	app.composer.SetOffset(9, 0) // what TextArea does, using the pre-paste height
 
 	app.syncComposerLayout()
+	app.clampComposerScroll()
 
 	wantMax := 10 - composerMaxTextRows
 	if row, _ := app.composer.GetOffset(); row != wantMax {
 		t.Fatalf("row offset = %d, want %d so the last %d lines fill the box", row, wantMax, composerMaxTextRows)
+	}
+}
+
+// The clamp must not live in the changed callback. TextArea.replace defers t.changed(), so the
+// callback fires before PasteHandler's findCursor call re-derives rowOffset from the stale
+// height — anything set from there is overwritten. This pins the ordering by driving the real
+// paste handler and asserting the clamp still wins afterwards.
+func TestClampSurvivesTextAreaPasteHandler(t *testing.T) {
+	app := newSuggestionTestApp()
+	app.composeStack = tview.NewFlex().SetDirection(tview.FlexRow)
+	app.composeStack.AddItem(app.composer, 3, 0, false)
+	app.composer.SetRect(0, 0, 40, 3)
+
+	pasted := strings.Repeat("line\n", 9) + "line"
+	app.composer.PasteHandler()(pasted, func(tview.Primitive) {})
+
+	// After the paste alone the editor has scrolled against its old one-row height.
+	if row, _ := app.composer.GetOffset(); row == 10-composerMaxTextRows {
+		t.Skip("editor already clamped itself; the ordering hazard no longer exists")
+	}
+
+	app.clampComposerScroll()
+
+	wantMax := 10 - composerMaxTextRows
+	if row, _ := app.composer.GetOffset(); row != wantMax {
+		t.Fatalf("row offset = %d, want %d after the paste handler completes", row, wantMax)
 	}
 }

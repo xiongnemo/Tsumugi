@@ -115,7 +115,6 @@ func (a *App) syncComposerLayout() {
 	if a.rightPane != nil {
 		a.rightPane.ResizeItem(a.composeStack, a.composeStackRows(), 0)
 	}
-	a.clampComposerScroll()
 }
 
 // clampComposerScroll undoes over-scrolling the editor did while the box was still smaller.
@@ -125,12 +124,23 @@ func (a *App) syncComposerLayout() {
 // rowOffset to 1, and pasting ten lines pushes it to 9. Growing the box afterwards does not
 // undo that, because Draw only ever increases rowOffset to chase the cursor and never
 // decreases it when there is room again. The visible effects were the first line vanishing
-// after Enter, and a multi-line paste showing only its last line above five blank rows.
+// after Enter, and a multi-line paste showing only its last line above blank rows.
 //
-// The fix is one rule rather than a special case per edit: never scroll further than needed to
-// reach the bottom of the text. Note the new inner height has to be computed rather than read
-// from GetInnerRect, which still reports the pre-resize geometry until the next draw.
+// The rule is: never scroll further than needed to reach the bottom of the text. Text that
+// fits pins to the top; text that overflows scrolls no further than filling the box.
+//
+// This must NOT be called from the changed callback. TextArea.replace defers t.changed(), so
+// the callback fires while the editor is only half done — PasteHandler then calls
+// findCursor(true, …), which re-derives rowOffset from the stale height and overwrites
+// anything we set. It runs from Application.SetBeforeDrawFunc instead, which is after all
+// event handling and before the frame renders.
+//
+// The new inner height is computed rather than read from GetInnerRect, because the Flex has not
+// applied the resize yet at that point.
 func (a *App) clampComposerScroll() {
+	if a.composer == nil {
+		return
+	}
 	_, _, innerWidth, _ := a.composer.GetInnerRect()
 	text := a.composer.GetText()
 	innerHeight := composerTextRows(text, innerWidth)

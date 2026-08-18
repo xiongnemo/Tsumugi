@@ -224,6 +224,12 @@ func (a *App) build() {
 
 	a.app.SetRoot(a.root, true)
 	a.app.SetInputCapture(a.capture)
+	// The composer's scroll has to be corrected after the editor's own cursor handling has
+	// run, which the changed callback is too early for; see clampComposerScroll.
+	a.app.SetBeforeDrawFunc(func(tcell.Screen) bool {
+		a.clampComposerScroll()
+		return false
+	})
 	a.updateFocusStyle()
 	a.refreshStatusBar()
 }
