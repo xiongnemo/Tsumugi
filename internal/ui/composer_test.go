@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
@@ -198,5 +199,73 @@ func TestParseComposeTokenIsCursorAware(t *testing.T) {
 				t.Fatalf("parseComposeToken(%q, %d) = %+v, want %+v", tt.text, tt.cursor, got, tt.want)
 			}
 		})
+	}
+}
+
+// TextArea keeps the cursor visible using the height from its last Draw, so pressing Enter in
+// a one-row box scrolls row 0 away, and growing the box afterwards does not bring it back —
+// Draw only ever increases rowOffset. The first typed line appeared to vanish while the text
+// was still intact.
+func TestSyncComposerLayoutResetsStaleScroll(t *testing.T) {
+	app := newSuggestionTestApp()
+	app.composeStack = tview.NewFlex().SetDirection(tview.FlexRow)
+	app.composeStack.AddItem(app.composer, 3, 0, false)
+
+	app.composer.SetText("first\nsecond", true)
+	// What the editor does after Enter while it is still one row tall.
+	app.composer.SetOffset(1, 0)
+
+	app.syncComposerLayout()
+
+	if row, _ := app.composer.GetOffset(); row != 0 {
+		t.Fatalf("row offset = %d, want 0 so the first line is visible again", row)
+	}
+}
+
+// A scroll that is already within range is the editor's business and must be left alone.
+func TestSyncComposerLayoutLeavesInRangeScrollAlone(t *testing.T) {
+	app := newSuggestionTestApp()
+	app.composeStack = tview.NewFlex().SetDirection(tview.FlexRow)
+	app.composeStack.AddItem(app.composer, 3, 0, false)
+	app.composer.SetRect(0, 0, 40, 8)
+
+	app.composer.SetText(strings.Repeat("line\n", composerMaxTextRows+4), true)
+	app.composer.SetOffset(3, 0)
+
+	app.syncComposerLayout()
+
+	if row, _ := app.composer.GetOffset(); row != 3 {
+		t.Fatalf("row offset = %d, want 3 left untouched", row)
+	}
+}
+
+func TestComposerTextRowsRawIsUnclamped(t *testing.T) {
+	got := composerTextRowsRaw(strings.Repeat("a\n", 19)+"a", 40)
+	if got != 20 {
+		t.Fatalf("composerTextRowsRaw = %d, want 20 unclamped", got)
+	}
+	if clamped := composerTextRows(strings.Repeat("a\n", 19)+"a", 40); clamped != composerMaxTextRows {
+		t.Fatalf("composerTextRows = %d, want clamped to %d", clamped, composerMaxTextRows)
+	}
+}
+
+// A multi-line paste scrolls against the old one-row height, landing rowOffset on the last
+// line. The box grows to its maximum, so the offset must come back far enough to fill it —
+// otherwise the paste shows as its last line above a stack of blank rows, which is what the
+// two-branch version of this clamp did.
+func TestSyncComposerLayoutClampsScrollAfterMultiLinePaste(t *testing.T) {
+	app := newSuggestionTestApp()
+	app.composeStack = tview.NewFlex().SetDirection(tview.FlexRow)
+	app.composeStack.AddItem(app.composer, 3, 0, false)
+	app.composer.SetRect(0, 0, 40, 8)
+
+	app.composer.SetText(strings.Repeat("line\n", 9)+"line", true)
+	app.composer.SetOffset(9, 0) // what TextArea does, using the pre-paste height
+
+	app.syncComposerLayout()
+
+	wantMax := 10 - composerMaxTextRows
+	if row, _ := app.composer.GetOffset(); row != wantMax {
+		t.Fatalf("row offset = %d, want %d so the last %d lines fill the box", row, wantMax, composerMaxTextRows)
 	}
 }

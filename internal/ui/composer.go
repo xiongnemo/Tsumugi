@@ -52,10 +52,22 @@ func composerSendKey(event *tcell.EventKey) bool {
 	}
 }
 
-// composerTextRows is the number of screen rows the text occupies, clamped to the composer's
-// growth bounds. innerWidth <= 0 means the primitive has no geometry yet, in which case only
-// hard line breaks can be counted.
+// composerTextRows is composerTextRowsRaw clamped to the composer's growth bounds.
 func composerTextRows(text string, innerWidth int) int {
+	rows := composerTextRowsRaw(text, innerWidth)
+	if rows < composerMinTextRows {
+		rows = composerMinTextRows
+	}
+	if rows > composerMaxTextRows {
+		rows = composerMaxTextRows
+	}
+	return rows
+}
+
+// composerTextRowsRaw is how many screen rows the text really needs, unclamped, so callers can
+// tell whether it fits the box. innerWidth <= 0 means the primitive has no geometry yet, in
+// which case only hard line breaks can be counted.
+func composerTextRowsRaw(text string, innerWidth int) int {
 	rows := 0
 	for _, line := range strings.Split(text, "\n") {
 		if innerWidth <= 0 {
@@ -71,11 +83,8 @@ func composerTextRows(text string, innerWidth int) int {
 		}
 		rows += (width + innerWidth - 1) / innerWidth
 	}
-	if rows < composerMinTextRows {
-		rows = composerMinTextRows
-	}
-	if rows > composerMaxTextRows {
-		rows = composerMaxTextRows
+	if rows < 1 {
+		rows = 1
 	}
 	return rows
 }
@@ -105,6 +114,32 @@ func (a *App) syncComposerLayout() {
 	a.composeStack.ResizeItem(a.composer, a.composerBoxRows(), 0)
 	if a.rightPane != nil {
 		a.rightPane.ResizeItem(a.composeStack, a.composeStackRows(), 0)
+	}
+	a.clampComposerScroll()
+}
+
+// clampComposerScroll undoes over-scrolling the editor did while the box was still smaller.
+//
+// TextArea keeps the cursor visible using the height from its *last* Draw, so any edit that
+// adds rows scrolls against the old, smaller height: pressing Enter in a one-row box pushes
+// rowOffset to 1, and pasting ten lines pushes it to 9. Growing the box afterwards does not
+// undo that, because Draw only ever increases rowOffset to chase the cursor and never
+// decreases it when there is room again. The visible effects were the first line vanishing
+// after Enter, and a multi-line paste showing only its last line above five blank rows.
+//
+// The fix is one rule rather than a special case per edit: never scroll further than needed to
+// reach the bottom of the text. Note the new inner height has to be computed rather than read
+// from GetInnerRect, which still reports the pre-resize geometry until the next draw.
+func (a *App) clampComposerScroll() {
+	_, _, innerWidth, _ := a.composer.GetInnerRect()
+	text := a.composer.GetText()
+	innerHeight := composerTextRows(text, innerWidth)
+	maxOffset := composerTextRowsRaw(text, innerWidth) - innerHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if row, _ := a.composer.GetOffset(); row > maxOffset {
+		a.composer.SetOffset(maxOffset, 0)
 	}
 }
 
