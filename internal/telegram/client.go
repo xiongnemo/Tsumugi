@@ -19,7 +19,6 @@ import (
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/tg"
-	"github.com/gotd/td/tgerr"
 
 	"github.com/nemo/Tsumugi/internal/config"
 	"github.com/nemo/Tsumugi/internal/i18n"
@@ -219,7 +218,9 @@ func (c *GotdClient) loadDialogs(ctx context.Context, accountID string, api *tg.
 	if c.store != nil && len(peers) > 0 {
 		for i := range peers {
 			if existing, ok, err := c.store.Peer(ctx, accountID, peers[i].Key); err == nil && ok {
-				peers[i] = mergePeerActivity(existing, peers[i])
+				// These peers came from messages.getDialogs, so their read state is
+				// authoritative; mergePeerActivity would discard it.
+				peers[i] = mergeDialogPeer(existing, peers[i])
 			}
 		}
 		if err := c.store.SavePeers(ctx, peers); err != nil {
@@ -433,7 +434,8 @@ func (c *GotdClient) syncDialogPages(ctx context.Context, accountID string, api 
 		if len(pagePeers) > 0 {
 			for i := range pagePeers {
 				if existing, ok, err := c.store.Peer(ctx, accountID, pagePeers[i].Key); err == nil && ok {
-					pagePeers[i] = mergePeerActivity(existing, pagePeers[i])
+					// Dialog-derived, so read state is authoritative here too.
+					pagePeers[i] = mergeDialogPeer(existing, pagePeers[i])
 				}
 			}
 			allPeers = append(allPeers, pagePeers...)
@@ -489,27 +491,9 @@ func (c *GotdClient) sendFocusedEvent(ctx context.Context, events chan<- Event, 
 }
 
 func (c *GotdClient) messagesGetHistory(ctx context.Context, api *tg.Client, req *tg.MessagesGetHistoryRequest) (tg.MessagesMessagesClass, error) {
-	floodWaits := 0
-	for {
-		res, err := api.MessagesGetHistory(ctx, req)
-		if err == nil {
-			return res, nil
-		}
-		flood, fwErr := tgerr.FloodWait(ctx, err)
-		if !flood {
-			return nil, fwErr
-		}
-		if fwErr != nil {
-			return nil, fwErr
-		}
-		floodWaits++
-		if floodWaits >= 3 {
-			return nil, fmt.Errorf("telegram flood wait repeated while loading history: %w", err)
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-	}
+	return retryFloodWait(ctx, defaultMaxFloodWaits, "loading history", func(ctx context.Context) (tg.MessagesMessagesClass, error) {
+		return api.MessagesGetHistory(ctx, req)
+	})
 }
 
 func (c *GotdClient) saveUpdateState(ctx context.Context, events chan<- Event, state storage.UpdateState) {
@@ -2191,27 +2175,9 @@ func animatedDocumentExt(media MediaAttachment) string {
 }
 
 func uploadGetFile(ctx context.Context, api *tg.Client, req *tg.UploadGetFileRequest) (tg.UploadFileClass, error) {
-	floodWaits := 0
-	for {
-		file, err := api.UploadGetFile(ctx, req)
-		if err == nil {
-			return file, nil
-		}
-		flood, fwErr := tgerr.FloodWait(ctx, err)
-		if !flood {
-			return nil, fwErr
-		}
-		if fwErr != nil {
-			return nil, fwErr
-		}
-		floodWaits++
-		if floodWaits >= 3 {
-			return nil, fmt.Errorf("telegram flood wait repeated while downloading media: %w", err)
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-	}
+	return retryFloodWait(ctx, defaultMaxFloodWaits, "downloading media", func(ctx context.Context) (tg.UploadFileClass, error) {
+		return api.UploadGetFile(ctx, req)
+	})
 }
 
 var (
@@ -2402,6 +2368,26 @@ func mergePeerActivity(existing, activity storage.Peer) storage.Peer {
 	if out.HistoryLoadedUntil.IsZero() {
 		out.HistoryLoadedUntil = existing.HistoryLoadedUntil
 	}
+	return out
+}
+
+// mergeDialogPeer keeps local-only peer metadata when applying a dialog-sync update.
+//
+// It differs from mergePeerActivity in exactly one respect, and that difference matters:
+// read state comes from the dialog. messages.getDialogs is the authoritative source for
+// unread counts and read watermarks, whereas a message-driven update carries none and must
+// preserve whatever is stored. The dialog sync loop used to call mergePeerActivity, which
+// pinned the unread badge to whatever the very first sync happened to see — it then never
+// refreshed, and once read state starts driving the unread jump it would freeze that too.
+//
+// A local mark-read can briefly disagree with a dialog sync that the server has not yet
+// processed, which shows up as the badge bouncing back for one sync. The server's own
+// UpdateReadHistoryInbox echo carries StillUnreadCount and corrects it, and trusting the
+// dialog is still much better than never refreshing at all.
+func mergeDialogPeer(existing, dialog storage.Peer) storage.Peer {
+	out := mergePeerActivity(existing, dialog)
+	out.Unread = dialog.Unread
+	out.ReadOutboxMaxID = dialog.ReadOutboxMaxID
 	return out
 }
 

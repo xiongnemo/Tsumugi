@@ -47,7 +47,7 @@ func (c *GotdClient) syncPinnedDialogs(ctx context.Context, accountID string, ap
 		peer.Pinned = true
 		peer.PinnedOrder = index + 1
 		if existing, ok, err := c.store.Peer(ctx, accountID, peer.Key); err == nil && ok {
-			peer = mergePeerActivity(existing, peer)
+			peer = mergeDialogPeer(existing, peer)
 			peer.Pinned = true
 			peer.PinnedOrder = index + 1
 		}
