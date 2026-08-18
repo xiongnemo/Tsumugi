@@ -98,6 +98,7 @@ func (a *App) settingsGeneralForm(overlay *settingsOverlay) *tview.Form {
 
 	form.AddDropDown(i18n.T(i18n.KeySettingsLanguage), []string{"English (en)", "中文 (zh)"}, localeIndex, nil).
 		AddCheckbox(i18n.T(i18n.KeySettingsInlineAnim), a.settings.InlineAnim, nil).
+		AddCheckbox(i18n.T(i18n.KeySettingsJumpUnread), a.settings.JumpToFirstUnread, nil).
 		AddButton(i18n.T(i18n.KeySettingsSave), func() {
 			dropdown := form.GetFormItem(0).(*tview.DropDown)
 			_, localeText := dropdown.GetCurrentOption()
@@ -106,10 +107,15 @@ func (a *App) settingsGeneralForm(overlay *settingsOverlay) *tview.Form {
 				locale = "zh"
 			}
 			inlineAnim := form.GetFormItem(1).(*tview.Checkbox).IsChecked()
+			jumpUnread := form.GetFormItem(2).(*tview.Checkbox).IsChecked()
+			// Rebuilt as a literal, so every field has to be carried across explicitly:
+			// omitting one silently resets the user's choice whenever they touch any other
+			// General setting.
 			next := settings.Settings{
-				Locale:         locale,
-				InlineAnim:     inlineAnim,
-				OutgoingLayout: a.settings.OutgoingLayout,
+				Locale:            locale,
+				InlineAnim:        inlineAnim,
+				OutgoingLayout:    a.settings.OutgoingLayout,
+				JumpToFirstUnread: jumpUnread,
 			}
 			if err := next.Save(context.Background(), a.db); err != nil {
 				a.setSettingsStatus("[red]" + err.Error())

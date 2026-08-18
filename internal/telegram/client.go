@@ -1239,7 +1239,8 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				c.setFocusPeer(command.PeerKey)
 			case CommandOpenChat:
 				peerKey := command.PeerKey
-				go c.openChat(ctx, accountID, api, events, peerKey)
+				jumpToUnread := command.JumpToUnread
+				go c.openChat(ctx, accountID, api, events, peerKey, jumpToUnread)
 			case CommandSendText:
 				c.sendText(ctx, accountID, api, events, command.PeerKey, command.Text, command.ReplyToID, command.MentionEntities)
 			case CommandRetrySend:
@@ -1297,16 +1298,31 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 	}
 }
 
-func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Client, events chan<- Event, peerKey string) {
+// openChat loads a chat's history and emits it.
+//
+// jumpToUnread asks for the window around the first unread message instead of the newest one.
+// It is a parameter rather than a second command on purpose: two commands would dispatch two
+// concurrent viewport replacements, and whichever landed second would win nondeterministically.
+func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Client, events chan<- Event, peerKey string, jumpToUnread bool) {
 	if c.store == nil || !c.isFocusedPeer(peerKey) {
 		return
+	}
+	// Decided up front so an unread jump does not first flash the newest cached window and then
+	// replace it with one from the middle of the history.
+	wantUnreadJump := false
+	if jumpToUnread {
+		if p, ok, err := c.store.Peer(ctx, accountID, peerKey); err == nil && ok {
+			wantUnreadJump = p.ReadInboxMaxID > 0 && p.Unread > 0
+		}
 	}
 	cached, err := c.store.MessagesForPeer(ctx, accountID, peerKey, 100)
 	cachedCount := 0
 	if err == nil && len(cached) > 0 {
 		cachedCount = len(cached)
-		converted := c.telegramMessages(ctx, accountID, cached)
-		c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventMessages, PeerKey: peerKey, Messages: converted})
+		if !wantUnreadJump {
+			converted := c.telegramMessages(ctx, accountID, cached)
+			c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventMessages, PeerKey: peerKey, Messages: converted})
+		}
 		if c.isFocusedPeer(peerKey) {
 			toEnrich := append([]storage.Message(nil), cached...)
 			go c.enrichPeerMessagePreviews(ctx, accountID, api, events, peerKey, toEnrich)
@@ -1350,7 +1366,18 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 		if !c.isFocusedPeer(peerKey) {
 			return
 		}
-		history, err := c.messagesGetHistory(ctx, api, &tg.MessagesGetHistoryRequest{Peer: input, Limit: 50})
+		// Anchor on the first unread rather than the tail when asked, using the same
+		// centred-window trick as jumpToMessage: OffsetID one past the read watermark with
+		// AddOffset pulled back half the window, so the target arrives with context on both
+		// sides in one round trip.
+		windowed := jumpToUnread && p.ReadInboxMaxID > 0 && p.Unread > 0
+		req := &tg.MessagesGetHistoryRequest{Peer: input, Limit: 50}
+		if windowed {
+			req.OffsetID = p.ReadInboxMaxID + 1
+			req.AddOffset = -jumpWindowLimit / 2
+			req.Limit = jumpWindowLimit
+		}
+		history, err := c.messagesGetHistory(ctx, api, req)
 		if err != nil {
 			c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventError, Error: fmt.Errorf("load history: %w", err)})
 			return
@@ -1360,14 +1387,39 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 			c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventError, Error: fmt.Errorf("save history: %w", err)})
 			return
 		}
-		if len(msgs) > 0 {
+		if len(msgs) > 0 && !windowed {
+			// Deliberately skipped for a window: lowering history_min_id to a disjoint
+			// window's minimum makes the backfiller believe it holds history it does not,
+			// and it then chases a hole that is not there. jump.go avoids this the same way.
 			_ = c.store.UpdatePeerHistory(ctx, accountID, peerKey, minStorageMessageID(msgs), time.Now().UTC())
 		}
-		skipReplace = cachedCount > 0 && sameStorageMessageSet(cached, msgs)
-		if !skipReplace {
-			c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventMessages, PeerKey: peerKey, Messages: c.telegramMessages(ctx, accountID, msgs), StatusMsg: i18n.M(i18n.KeyStatusHistoryLoaded, len(msgs))})
-		} else {
+		// The shortcut compares against the newest-window cache, so it is meaningless for a
+		// window anchored elsewhere. Gated on wantUnreadJump rather than windowed because that
+		// is what suppressed the cached emit: if the two ever disagreed, skipping the replace
+		// would leave the pane empty.
+		skipReplace = !wantUnreadJump && !windowed && cachedCount > 0 && sameStorageMessageSet(cached, msgs)
+		switch {
+		case skipReplace:
 			c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusHistoryLoaded, len(cached))})
+		case windowed:
+			// Resolve the landing spot from what actually came back. The id one past the
+			// watermark may be deleted, a service message, or outside the window, so
+			// asserting it exists would fail on ordinary chats.
+			target := firstUnreadStorageID(msgs, p.ReadInboxMaxID)
+			event := Event{
+				Kind:            EventMessages,
+				PeerKey:         peerKey,
+				Messages:        c.telegramMessages(ctx, accountID, msgs),
+				WindowedHistory: true,
+				StatusMsg:       i18n.M(i18n.KeyStatusHistoryLoaded, len(msgs)),
+			}
+			if target > 0 {
+				event.SelectMessageID = strconv.Itoa(target)
+				event.FirstUnreadID = strconv.Itoa(target)
+			}
+			c.sendFocusedEvent(ctx, events, peerKey, event)
+		default:
+			c.sendFocusedEvent(ctx, events, peerKey, Event{Kind: EventMessages, PeerKey: peerKey, Messages: c.telegramMessages(ctx, accountID, msgs), StatusMsg: i18n.M(i18n.KeyStatusHistoryLoaded, len(msgs))})
 		}
 		if c.isFocusedPeer(peerKey) {
 			c.refreshChannelViews(ctx, accountID, api, events, p, msgs)

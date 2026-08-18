@@ -105,6 +105,10 @@ type App struct {
 	markReadSentMaxID map[string]int
 	markReadSentAt    time.Time
 	markReadTimer     *time.Timer
+	// historyWindowed is true while the pane shows a window from the middle of the history
+	// rather than the newest messages, which is what End and G use to offer a way back.
+	historyWindowed bool
+	unreadDividerID string
 }
 
 func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
@@ -280,6 +284,11 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		a.flushMarkRead()
 		a.app.Stop()
 		return nil
+	case tcell.KeyEnd:
+		// Only intercepted while windowed; otherwise End is the viewport's own jump-to-bottom.
+		if focus == a.messages && a.returnToTail() {
+			return nil
+		}
 	case tcell.KeyUp:
 		if focus == a.messages {
 			a.messages.SelectDelta(-1)
@@ -397,6 +406,10 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 	case 'k':
 		if focus == a.messages {
 			a.messages.SelectDelta(-1)
+			return nil
+		}
+	case 'G':
+		if focus == a.messages && a.returnToTail() {
 			return nil
 		}
 	case 'q':
@@ -576,10 +589,15 @@ func (a *App) applyEvent(event telegram.Event) {
 		} else if event.Merge {
 			a.mergeMessages(event.Messages, event.PreserveViewport)
 		} else {
+			// Must run before the replace: setMessages consults historyWindowed to decide
+			// whether to scroll to the tail, and the divider changes block heights.
+			a.applyHistoryWindow(event)
 			a.setMessages(event.Messages, event.PreserveViewport)
 		}
-		if event.SelectMessageID != "" {
-			a.selectMessageByID(event.SelectMessageID)
+		if event.SelectMessageID != "" && a.selectMessageByID(event.SelectMessageID) && event.WindowedHistory {
+			// ensureSelectedVisible scrolls the minimum, which lands the first unread on the
+			// bottom edge with none of the unread messages below it visible.
+			a.messages.ScrollSelectedToTop()
 		}
 	case telegram.EventPeerPinned:
 		if event.PeerKey != a.currentChat {
@@ -735,7 +753,11 @@ func (a *App) refreshChats() {
 			a.refreshStatusBar()
 			a.app.SetFocus(a.messages)
 			a.updateFocusStyle()
-			a.commands <- telegram.Command{Kind: telegram.CommandOpenChat, PeerKey: peerID}
+			a.commands <- telegram.Command{
+				Kind:         telegram.CommandOpenChat,
+				PeerKey:      peerID,
+				JumpToUnread: a.settings.JumpToFirstUnread,
+			}
 		})
 	}
 	if len(visible) == 0 {
@@ -939,7 +961,11 @@ func (a *App) setMessages(messages []telegram.Message, preserveViewport bool) {
 	}
 	a.messages.SetMessagesReplace(messages, preserveViewport)
 	if !preserveViewport {
-		a.messages.ScrollToEnd()
+		if a.historyWindowed {
+			a.messages.SetFollowEnd(false)
+		} else {
+			a.messages.ScrollToEnd()
+		}
 	}
 	a.applyMessagesPaneTitle()
 	a.refreshStatusBar()

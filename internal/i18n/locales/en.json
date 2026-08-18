@@ -332,5 +332,9 @@
   "typing.is_recording_voice": "%s is recording audio…",
   "typing.is_uploading": "%s is sending a file…",
   "typing.is_active": "%s is active…",
-  "typing.many": "%d people are typing…"
+  "typing.many": "%d people are typing…",
+  "ui.unread_divider": "Unread messages",
+  "ui.windowed_history": "End = latest",
+  "status.at_tail": "Back to the latest messages.",
+  "settings.jump_unread": "Open chats at first unread"
 }

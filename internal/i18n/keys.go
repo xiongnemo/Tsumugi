@@ -340,4 +340,10 @@ const (
 	KeyTypingIsUploading      = "typing.is_uploading"
 	KeyTypingIsActive         = "typing.is_active"
 	KeyTypingMany             = "typing.many"
+
+	KeySettingsJumpUnread = "settings.jump_unread"
+
+	KeyUIUnreadDivider   = "ui.unread_divider"
+	KeyUIWindowedHistory = "ui.windowed_history"
+	KeyStatusAtTail      = "status.at_tail"
 )

@@ -1,6 +1,54 @@
 package telegram
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/nemo/Tsumugi/internal/storage"
+)
+
+func TestFirstUnreadStorageID(t *testing.T) {
+	window := []storage.Message{
+		{ID: 10},
+		{ID: 11},
+		{ID: 12, Outgoing: true},
+		{ID: 13},
+		{ID: 14},
+	}
+	cases := []struct {
+		name           string
+		messages       []storage.Message
+		readInboxMaxID int
+		want           int
+	}{
+		{"oldest above the watermark", window, 11, 13},
+		{"everything unread", window, 0, 10},
+		{"everything read", window, 14, 0},
+		// Our own sends are never unread. A chat whose newest message is ours would otherwise
+		// "jump" to it and look like nothing happened.
+		{"skips our own message", window, 11, 13},
+		{"only outgoing above the watermark", []storage.Message{{ID: 20, Outgoing: true}}, 10, 0},
+		// A normal outcome, not an error: the first unread id may be deleted or outside the
+		// window we asked for.
+		{"empty window", nil, 5, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := firstUnreadStorageID(tc.messages, tc.readInboxMaxID); got != tc.want {
+				t.Fatalf("firstUnreadStorageID(_, %d) = %d, want %d", tc.readInboxMaxID, got, tc.want)
+			}
+		})
+	}
+}
+
+// The window comes back newest-first from Telegram, so the helper must not just take the first
+// match it sees.
+func TestFirstUnreadStorageIDIgnoresOrdering(t *testing.T) {
+	descending := []storage.Message{{ID: 14}, {ID: 13}, {ID: 12}, {ID: 11}}
+
+	if got := firstUnreadStorageID(descending, 11); got != 12 {
+		t.Fatalf("got %d, want the lowest unread id 12 regardless of slice order", got)
+	}
+}
 
 func TestLocalUnreadAfterRead(t *testing.T) {
 	cases := []struct {

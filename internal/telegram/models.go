@@ -78,6 +78,11 @@ type Event struct {
 	// so it is always truthful rather than a delta the UI would have to reconcile.
 	ReadInboxMaxID int
 	Unread         int
+	// WindowedHistory marks a message set that is a window somewhere in the middle of the
+	// history rather than the newest one, so the UI can offer a way back to the tail.
+	WindowedHistory bool
+	// FirstUnreadID is the message to draw the unread divider above, when there is one.
+	FirstUnreadID string
 }
 
 // BackgroundKind identifies low-priority work shown in the status bar right column.
@@ -210,6 +215,10 @@ type Command struct {
 	MentionEntities []MessageEntityMentionName
 	// Typing distinguishes "I am composing" from "I stopped" for CommandSetTyping.
 	Typing bool
+	// JumpToUnread asks CommandOpenChat for the window around the first unread message rather
+	// than the newest one. A parameter rather than its own command, because two commands would
+	// race two viewport replacements.
+	JumpToUnread bool
 }
 
 type MentionSuggestion struct {

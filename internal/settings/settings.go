@@ -13,22 +13,27 @@ const (
 	KeyLocale         = "locale"
 	KeyInlineAnim     = "inline_anim"
 	KeyOutgoingLayout = "outgoing_layout"
+	// KeyJumpToFirstUnread controls whether opening a chat lands on the first unread message
+	// instead of the newest one.
+	KeyJumpToFirstUnread = "jump_to_first_unread"
 )
 
 type Settings struct {
-	Locale         string
-	InlineAnim     bool
-	OutgoingLayout string
+	Locale            string
+	InlineAnim        bool
+	OutgoingLayout    string
+	JumpToFirstUnread bool
 }
 
 func Defaults() Settings {
-	return Settings{Locale: "en", InlineAnim: false, OutgoingLayout: "transcript"}
+	return Settings{Locale: "en", InlineAnim: false, OutgoingLayout: "transcript", JumpToFirstUnread: true}
 }
 
 func Load(ctx context.Context, db *storage.DB) Settings {
 	out := Defaults()
 	localeFromDB := false
 	inlineFromDB := false
+	jumpFromDB := false
 	if db != nil {
 		if v, ok, err := db.GetSetting(ctx, KeyLocale); err == nil && ok && strings.TrimSpace(v) != "" {
 			out.Locale = strings.TrimSpace(v)
@@ -40,6 +45,10 @@ func Load(ctx context.Context, db *storage.DB) Settings {
 		}
 		if v, ok, err := db.GetSetting(ctx, KeyOutgoingLayout); err == nil && ok && strings.TrimSpace(v) != "" {
 			out.OutgoingLayout = strings.TrimSpace(v)
+		}
+		if v, ok, err := db.GetSetting(ctx, KeyJumpToFirstUnread); err == nil && ok {
+			out.JumpToFirstUnread = v == "1" || strings.EqualFold(v, "true")
+			jumpFromDB = true
 		}
 	}
 	if !localeFromDB {
@@ -54,6 +63,12 @@ func Load(ctx context.Context, db *storage.DB) Settings {
 	}
 	if env := strings.TrimSpace(os.Getenv("TSUMUGI_OUTGOING_LAYOUT")); env != "" {
 		out.OutgoingLayout = env
+	}
+	// Default is on, so the env override has to be able to turn it off as well as on.
+	if !jumpFromDB {
+		if env := strings.TrimSpace(os.Getenv("TSUMUGI_JUMP_UNREAD")); env != "" {
+			out.JumpToFirstUnread = env == "1" || strings.EqualFold(env, "true")
+		}
 	}
 	if out.Locale == "" {
 		out.Locale = "en"
@@ -81,6 +96,13 @@ func (s Settings) Save(ctx context.Context, db *storage.DB) error {
 		layout = "transcript"
 	}
 	if err := db.SetSetting(ctx, KeyOutgoingLayout, layout); err != nil {
+		return err
+	}
+	jump := "0"
+	if s.JumpToFirstUnread {
+		jump = "1"
+	}
+	if err := db.SetSetting(ctx, KeyJumpToFirstUnread, jump); err != nil {
 		return err
 	}
 	i18n.SetLocale(s.Locale)

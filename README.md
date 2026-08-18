@@ -100,6 +100,10 @@ behaviour you may want to change.
   when you reopen the chat, and cleared once the message goes out. Drafts are stored
   encrypted locally so they survive a quit, and a draft changed in another client is
   picked up without ever overwriting text you are currently typing.
+- Unread handling: opening a chat marks it read and lands on the first unread message,
+  with a `-- Unread messages` rule above it. **`End`** or **`G`** returns to the latest
+  messages; the pane title says so while you are looking at older history. Turn the jump
+  off in Settings → General, or with `TSUMUGI_JUMP_UNREAD=0`.
 - Typing indicators both ways. Typing in the composer notifies the peer, and someone
   typing, recording audio, or uploading a file in the open chat is shown in the
   message pane title next to the chat name.

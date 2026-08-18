@@ -9,6 +9,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"github.com/nemo/Tsumugi/internal/i18n"
 	"github.com/nemo/Tsumugi/internal/media"
 	"github.com/nemo/Tsumugi/internal/render"
 	"github.com/nemo/Tsumugi/internal/telegram"
@@ -33,6 +34,7 @@ type MessageViewport struct {
 	onReachOlder             func()
 	onSelectionChanged       func()
 	notifiedSelectedID       string
+	unreadDividerID          string
 	lastOlderFire            time.Time
 	gifTick                  int
 	inlineAnim               bool
@@ -144,7 +146,7 @@ func (v *MessageViewport) ApplyPrebuiltLayout(blocks []messageBlock, width int, 
 	v.skipInlineAnimNextLayout = false
 }
 
-func buildAllMessageBlocks(messages []telegram.Message, width int, mode render.LayoutMode, broadcast bool, groupRead bool, inlineAnim bool, gifTick int, skipInlineAnim bool) []messageBlock {
+func buildAllMessageBlocks(messages []telegram.Message, width int, mode render.LayoutMode, broadcast bool, groupRead bool, inlineAnim bool, gifTick int, skipInlineAnim bool, unreadDividerID string) []messageBlock {
 	if width <= 0 {
 		width = 80
 	}
@@ -157,11 +159,12 @@ func buildAllMessageBlocks(messages []telegram.Message, width int, mode render.L
 		GroupReadMarks:      groupRead,
 	}
 	opts := blockBuildOpts{
-		layoutMode:     mode,
-		broadcast:      broadcast,
-		inlineAnim:     inlineAnim,
-		gifTick:        gifTick,
-		skipInlineAnim: skipInlineAnim,
+		layoutMode:      mode,
+		broadcast:       broadcast,
+		inlineAnim:      inlineAnim,
+		gifTick:         gifTick,
+		skipInlineAnim:  skipInlineAnim,
+		unreadDividerID: unreadDividerID,
 	}
 	blocks := make([]messageBlock, 0, len(messages))
 	offset := 0
@@ -180,6 +183,11 @@ type blockBuildOpts struct {
 	inlineAnim     bool
 	gifTick        int
 	skipInlineAnim bool
+	// unreadDividerID is the message to draw the "unread from here" rule above. The rule is
+	// prepended into that message's own lines rather than inserted as a block of its own,
+	// because blocks and messages must stay 1:1 — Draw compares blockIndex against v.selected,
+	// and ApplyPrebuiltLayout bails outright on a length mismatch.
+	unreadDividerID string
 }
 
 func (v *MessageViewport) SetBroadcastChannel(enabled bool) {
@@ -320,6 +328,49 @@ func (v *MessageViewport) selectedNotifyKey() string {
 	}
 	msg := v.messages[v.selected]
 	return msg.ChatID + "/" + msg.ID
+}
+
+// SetFollowEnd controls whether the view sticks to the newest message. SetMessages turns this on
+// unconditionally, so a caller replacing the list with a mid-history window has to turn it back
+// off or the next Draw scrolls straight past the window to its end.
+func (v *MessageViewport) SetFollowEnd(follow bool) {
+	v.followEnd = follow
+}
+
+// SetUnreadDividerID sets the message to draw the unread rule above, or "" to remove it.
+func (v *MessageViewport) SetUnreadDividerID(id string) {
+	if v.unreadDividerID == id {
+		return
+	}
+	v.unreadDividerID = id
+	v.invalidateLayout()
+}
+
+// ScrollSelectedToTop puts the selected message at the top of the view.
+//
+// ensureSelectedVisible scrolls the minimum distance, which for a jump from the tail lands the
+// target on the bottom edge with the unread divider above it and nothing of the unread messages
+// below. Landing at the top is what makes the divider useful.
+func (v *MessageViewport) ScrollSelectedToTop() {
+	if v.selected < 0 || v.selected >= len(v.messages) {
+		return
+	}
+	_, _, width, height := v.GetInnerRect()
+	if width <= 0 || height <= 0 {
+		return
+	}
+	v.layout(width)
+	if v.selected >= len(v.blocks) {
+		return
+	}
+	v.followEnd = false
+	v.scroll = v.blocks[v.selected].offset
+	if maxScroll := maxInt(0, v.totalHeight()-v.messageAreaHeight(height)); v.scroll > maxScroll {
+		v.scroll = maxScroll
+	}
+	if v.scroll < 0 {
+		v.scroll = 0
+	}
 }
 
 func (v *MessageViewport) SetOnReachOlder(fn func()) {
@@ -870,11 +921,12 @@ func (v *MessageViewport) doFullLayout(width int) {
 
 func (v *MessageViewport) buildMessageBlock(message telegram.Message, contentWidth int, rowOpts render.MessageRowOpts, skipInlineAnim bool) (messageBlock, bool) {
 	return buildMessageBlock(message, contentWidth, rowOpts, blockBuildOpts{
-		layoutMode:     v.layoutMode,
-		broadcast:      v.broadcastChan,
-		inlineAnim:     v.inlineAnim,
-		gifTick:        v.gifTick,
-		skipInlineAnim: skipInlineAnim,
+		layoutMode:      v.layoutMode,
+		broadcast:       v.broadcastChan,
+		inlineAnim:      v.inlineAnim,
+		gifTick:         v.gifTick,
+		skipInlineAnim:  skipInlineAnim,
+		unreadDividerID: v.unreadDividerID,
 	})
 }
 
@@ -886,12 +938,28 @@ func buildMessageBlock(message telegram.Message, contentWidth int, rowOpts rende
 		previewLines := normalizeInlinePreviewLines(message.Media.LocalPath, opts.gifTick)
 		lines = append(previewLines, lines...)
 	}
+	if opts.unreadDividerID != "" && message.ID == opts.unreadDividerID {
+		lines = append([]string{unreadDividerLine(contentWidth)}, lines...)
+	}
 	return messageBlock{
 		id:         message.ID,
 		lines:      lines,
 		height:     len(lines) + 1,
 		alignRight: opts.layoutMode == render.LayoutIM && message.Outgoing,
 	}, inlineMedia
+}
+
+// unreadDividerLine renders the "unread messages from here" rule.
+//
+// Uses '-' rather than a box-drawing rune so it survives a bare Linux VT, whose font has no
+// guaranteed coverage beyond the base set.
+func unreadDividerLine(contentWidth int) string {
+	label := i18n.T(i18n.KeyUIUnreadDivider)
+	rule := contentWidth - render.StringWidth(label) - 2
+	if rule < 0 {
+		rule = 0
+	}
+	return "[yellow]" + strings.Repeat("-", rule) + " " + label + " [-]"
 }
 
 func normalizeInlinePreviewLines(path string, tick int) []string {

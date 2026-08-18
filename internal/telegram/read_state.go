@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/gotd/td/tg"
+
+	"github.com/nemo/Tsumugi/internal/storage"
 )
 
 // inboxPeerKey resolves the stored peer key for an inbox read update.
@@ -106,6 +108,29 @@ func (c *GotdClient) markRead(ctx context.Context, accountID string, api *tg.Cli
 	// Apply locally rather than waiting for the server's echo, so the badge clears at once.
 	// The echo carries StillUnreadCount and corrects the count if this guess was wrong.
 	c.applyReadInbox(ctx, accountID, events, cmd.PeerKey, cmd.MessageID, localUnreadAfterRead(p.Unread, p.TopMessageID, cmd.MessageID))
+}
+
+// firstUnreadStorageID picks the message to land on when opening a chat with unread messages.
+//
+// It is the oldest incoming message above the read watermark. Outgoing messages are skipped
+// because our own sends are never unread, and a chat whose newest message is ours would
+// otherwise "jump" to it and look like nothing happened.
+//
+// Returns 0 when the window contains no such message, which is a normal outcome and not an
+// error: the first unread id may be a deleted message, a service message, or simply outside the
+// window we asked for. Callers must resolve the target from what came back rather than asserting
+// a specific id exists.
+func firstUnreadStorageID(messages []storage.Message, readInboxMaxID int) int {
+	best := 0
+	for _, msg := range messages {
+		if msg.Outgoing || msg.ID <= readInboxMaxID {
+			continue
+		}
+		if best == 0 || msg.ID < best {
+			best = msg.ID
+		}
+	}
+	return best
 }
 
 // localUnreadAfterRead guesses the unread count after reading up to maxID.

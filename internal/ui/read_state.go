@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nemo/Tsumugi/internal/config"
+	"github.com/nemo/Tsumugi/internal/i18n"
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
 
@@ -35,6 +36,31 @@ func (a *App) applyReadInboxEvent(event telegram.Event) {
 	}
 	a.allChats[idx].Unread = event.Unread
 	a.refreshChats()
+}
+
+// applyHistoryWindow records whether an incoming message set is a window from the middle of the
+// history, and which message the unread divider belongs above.
+func (a *App) applyHistoryWindow(event telegram.Event) {
+	a.historyWindowed = event.WindowedHistory
+	a.unreadDividerID = event.FirstUnreadID
+	a.messages.SetUnreadDividerID(event.FirstUnreadID)
+}
+
+// returnToTail re-opens the current chat anchored on the newest messages.
+//
+// No new backend code: CommandOpenChat without JumpToUnread emits the newest window, which is
+// already cached, so this is effectively instant. Bound to End and G because a user dropped into
+// the middle of a long history otherwise has no visible way back.
+func (a *App) returnToTail() bool {
+	if !a.historyWindowed || !a.draftablePeer(a.currentChat) || a.commands == nil {
+		return false
+	}
+	a.historyWindowed = false
+	a.unreadDividerID = ""
+	a.messages.SetUnreadDividerID("")
+	a.commands <- telegram.Command{Kind: telegram.CommandOpenChat, PeerKey: a.currentChat}
+	a.setStatusMsg(i18n.KeyStatusAtTail)
+	return true
 }
 
 // onMessageCursorMoved is the viewport's selection-changed callback: it both marks read and

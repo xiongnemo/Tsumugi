@@ -332,5 +332,9 @@
   "typing.is_recording_voice": "%s 正在录音…",
   "typing.is_uploading": "%s 正在发送文件…",
   "typing.is_active": "%s 正在操作…",
-  "typing.many": "%d 人正在输入…"
+  "typing.many": "%d 人正在输入…",
+  "ui.unread_divider": "以下为未读",
+  "ui.windowed_history": "End 回到最新",
+  "status.at_tail": "已回到最新消息。",
+  "settings.jump_unread": "打开会话时定位到第一条未读"
 }

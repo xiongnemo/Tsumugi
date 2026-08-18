@@ -30,12 +30,13 @@ func (a *App) toggleOutgoingLayout() {
 	broadcast := a.currentBroadcast
 	groupRead := a.currentGroupRead
 	inlineAnim := a.settings.InlineAnim
+	dividerID := a.unreadDividerID
 
 	a.messages.SetLayoutRelayoutBusy(true)
 	a.setStatusMsg(i18n.KeyStatusLayoutSwitching)
 
 	go func() {
-		blocks := buildAllMessageBlocks(msgs, width, mode, broadcast, groupRead, inlineAnim, 0, true)
+		blocks := buildAllMessageBlocks(msgs, width, mode, broadcast, groupRead, inlineAnim, 0, true, dividerID)
 		a.app.QueueUpdateDraw(func() {
 			a.messages.ApplyPrebuiltLayout(blocks, width, mode)
 			a.setStatusMsg(i18n.KeyStatusLayoutMode, a.settings.OutgoingLayout)
