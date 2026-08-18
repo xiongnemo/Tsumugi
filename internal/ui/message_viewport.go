@@ -35,6 +35,8 @@ type MessageViewport struct {
 	onSelectionChanged       func()
 	notifiedSelectedID       string
 	unreadDividerID          string
+	marked                   map[string]struct{}
+	markedPruned             int
 	lastOlderFire            time.Time
 	gifTick                  int
 	inlineAnim               bool
@@ -701,10 +703,9 @@ func (v *MessageViewport) Draw(screen tcell.Screen) {
 				continue
 			}
 			selected := blockIndex == v.selected
-			cursor := "  "
-			if selected {
-				cursor = "> "
-			}
+			// Both states share the existing 2-cell gutter. Widening it would force a full
+			// relayout and shift contentWidth for every message.
+			cursor := gutterMarker(selected, v.isMarked(block.id))
 			lineText := line
 			pad := 0
 			if block.alignRight {
@@ -1050,6 +1051,89 @@ func (v *MessageViewport) rebuild(selectedID string) {
 	if v.selected < 0 && len(v.messages) > 0 {
 		v.selected = len(v.messages) - 1
 	}
+	v.pruneMarks()
+}
+
+// pruneMarks drops marked ids that are no longer in the viewport.
+//
+// This is what makes forwarding safe: it is impossible to forward a message you cannot see. A
+// jump replaces the whole window and therefore drops most of a mark set, which the UI has to
+// report — hence the count rather than a bare bool.
+func (v *MessageViewport) pruneMarks() {
+	if len(v.marked) == 0 {
+		return
+	}
+	for id := range v.marked {
+		if _, ok := v.rows[id]; !ok {
+			delete(v.marked, id)
+			v.markedPruned++
+		}
+	}
+}
+
+// TakeMarkedPruned reports and resets how many marks were dropped since the last call.
+func (v *MessageViewport) TakeMarkedPruned() int {
+	n := v.markedPruned
+	v.markedPruned = 0
+	return n
+}
+
+// ToggleMark marks or unmarks the selected message for a multi-message action.
+//
+// Keyed by message id rather than index, so a viewport rebuild cannot silently repoint a mark at
+// a different message.
+func (v *MessageViewport) ToggleMark() (marked bool, ok bool) {
+	msg, ok := v.SelectedMessage()
+	if !ok {
+		return false, false
+	}
+	if v.marked == nil {
+		v.marked = make(map[string]struct{})
+	}
+	if _, exists := v.marked[msg.ID]; exists {
+		delete(v.marked, msg.ID)
+		v.invalidateLayout()
+		return false, true
+	}
+	v.marked[msg.ID] = struct{}{}
+	v.invalidateLayout()
+	return true, true
+}
+
+// MarkedIDs returns the marked message ids in viewport (oldest first) order, which is the order
+// Telegram should receive them in.
+func (v *MessageViewport) MarkedIDs() []string {
+	if len(v.marked) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(v.marked))
+	for _, msg := range v.messages {
+		if _, ok := v.marked[msg.ID]; ok {
+			out = append(out, msg.ID)
+		}
+	}
+	return out
+}
+
+func (v *MessageViewport) MarkedCount() int {
+	return len(v.marked)
+}
+
+// ClearMarks drops every mark. Deliberately not called from SetMessages: openChat fires two
+// non-preserving replaces about a second apart, and clearing there would wipe a set the user
+// built in between. Clearing is App's decision — on chat switch and after a successful forward.
+func (v *MessageViewport) ClearMarks() {
+	if len(v.marked) == 0 {
+		return
+	}
+	v.marked = nil
+	v.markedPruned = 0
+	v.invalidateLayout()
+}
+
+func (v *MessageViewport) isMarked(id string) bool {
+	_, ok := v.marked[id]
+	return ok
 }
 
 func (v *MessageViewport) trimMessagesToCap(anchorID string) {

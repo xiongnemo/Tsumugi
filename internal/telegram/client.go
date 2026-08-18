@@ -1289,6 +1289,10 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				go c.saveDraft(ctx, accountID, api, events, command)
 			case CommandSetTyping:
 				go c.setTyping(ctx, accountID, api, command.PeerKey, command.Typing)
+			case CommandForwardMessages:
+				// Must be `go`: forwarding is a network round trip and the command loop
+				// serves every other interaction.
+				go c.forwardMessages(ctx, accountID, api, events, command)
 			case CommandMarkRead:
 				// Must be `go`: a synchronous read mark would stall the command loop on
 				// every scroll.

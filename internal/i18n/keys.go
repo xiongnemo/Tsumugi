@@ -346,4 +346,17 @@ const (
 	KeyUIUnreadDivider   = "ui.unread_divider"
 	KeyUIWindowedHistory = "ui.windowed_history"
 	KeyStatusAtTail      = "status.at_tail"
+
+	KeyStatusForwarded        = "status.forwarded"
+	KeyStatusForwardNothing   = "status.forward_nothing"
+	KeyStatusMarkedForForward = "status.marked_for_forward"
+	KeyStatusUnmarked         = "status.unmarked"
+	KeyStatusMarksDropped     = "status.marks_dropped"
+	KeyStatusNothingMarked    = "status.nothing_marked"
+	KeyStatusMarksCleared     = "status.marks_cleared"
+	KeyForwardTitle           = "forward.title"
+	KeyForwardTitleDropAuthor = "forward.title_drop_author"
+	KeyForwardHint            = "forward.hint"
+	KeyForwardSavedMessages   = "forward.saved_messages"
+	KeyForwardFilterLabel     = "forward.filter_label"
 )

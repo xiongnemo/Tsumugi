@@ -336,5 +336,17 @@
   "ui.unread_divider": "Unread messages",
   "ui.windowed_history": "End = latest",
   "status.at_tail": "Back to the latest messages.",
-  "settings.jump_unread": "Open chats at first unread"
+  "settings.jump_unread": "Open chats at first unread",
+  "status.forwarded": "Forwarded %d message(s).",
+  "status.forward_nothing": "Nothing to forward.",
+  "status.marked_for_forward": "Marked %d message(s). f forwards, F forwards without the author.",
+  "status.unmarked": "Unmarked. %d still marked.",
+  "status.marks_dropped": "%d marked message(s) are no longer in view and were dropped.",
+  "status.nothing_marked": "Mark messages with v first.",
+  "status.marks_cleared": "Selection cleared.",
+  "forward.title": "Forward to",
+  "forward.title_drop_author": "Forward to (without author)",
+  "forward.hint": "Type to filter · Enter sends · Esc cancels",
+  "forward.saved_messages": "Saved Messages",
+  "forward.filter_label": "Filter: "
 }

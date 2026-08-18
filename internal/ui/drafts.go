@@ -114,6 +114,8 @@ func (a *App) leaveChatForDraft() {
 		// back does not briefly show a stale one.
 		a.cancelTyping()
 		a.clearTypingForPeer(a.currentChat)
+		// Marks are message ids within one chat, so they cannot mean anything in the next one.
+		a.messages.ClearMarks()
 	}
 	if a.composer != nil && a.composer.GetText() != "" {
 		a.setComposerText("")

@@ -107,6 +107,11 @@ behaviour you may want to change.
 - Typing indicators both ways. Typing in the composer notifies the peer, and someone
   typing, recording audio, or uploading a file in the open chat is shown in the
   message pane title next to the chat name.
+- Forward messages. **`v`** marks the selected message (a `✓` appears in the gutter),
+  **`f`** opens a destination picker, and **`F`** forwards without the original author.
+  With nothing marked, `f` forwards the message under the cursor. Saved Messages is the
+  first destination in the list. Marks are dropped when they scroll out of the loaded
+  window, and Tsumugi says how many — you can never forward a message you cannot see.
 - Compose suggestions for `@` mentions, `@inline_bot query` inline results, and
   `/` bot commands in the current chat. Inline bot results render as a grid of
   thumbnails rather than a list.
@@ -297,6 +302,9 @@ UI labels. Editable profiles are stored in the local SQLite database.
   `Enter` accepts it, and `Esc` closes the panel without clearing typed text.
   Rows can also be clicked with the mouse.
 - `/`: search the focused view
+- `v`: mark/unmark the selected message for forwarding
+- `f` / `F`: forward marked messages (`F` drops the original author)
+- `End` / `G`: return to the latest messages while viewing older history
 - `L`: toggle outgoing message layout (message pane)
 - `R`: open the reaction panel for the selected message
 - `#`: expand the pinned banner into the full pinned message list

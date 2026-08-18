@@ -109,6 +109,12 @@ type App struct {
 	// rather than the newest messages, which is what End and G use to offer a way back.
 	historyWindowed bool
 	unreadDividerID string
+	// Forward picker overlay. Tracked in App because Esc has to be dismissed from the global
+	// capture; an overlay's own SetInputCapture never sees it.
+	forwardList       *tview.List
+	forwardInput      *tview.InputField
+	forwardSource     string
+	forwardDropAuthor bool
 }
 
 func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
@@ -368,6 +374,15 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 			a.closePinnedPanel()
 			return nil
 		}
+		if a.forwardList != nil {
+			a.closeForwardPicker()
+			return nil
+		}
+		// Clearing a pending mark set comes before falling back to the chat list, so Esc
+		// always has an obvious local meaning first.
+		if a.clearForwardMarks() {
+			return nil
+		}
 		a.app.SetRoot(a.root, true)
 		if a.currentChat != "" {
 			a.app.SetFocus(a.messages)
@@ -406,6 +421,21 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 	case 'k':
 		if focus == a.messages {
 			a.messages.SelectDelta(-1)
+			return nil
+		}
+	case 'v':
+		if focus == a.messages {
+			a.toggleForwardMark()
+			return nil
+		}
+	case 'f':
+		if focus == a.messages {
+			a.openForwardPicker(false)
+			return nil
+		}
+	case 'F':
+		if focus == a.messages {
+			a.openForwardPicker(true)
 			return nil
 		}
 	case 'G':
@@ -593,6 +623,9 @@ func (a *App) applyEvent(event telegram.Event) {
 			// whether to scroll to the tail, and the divider changes block heights.
 			a.applyHistoryWindow(event)
 			a.setMessages(event.Messages, event.PreserveViewport)
+			// A replacement prunes marks for messages that left the window; forwarding the
+			// survivors without saying so would be the wrong answer.
+			a.reportDroppedMarks()
 		}
 		if event.SelectMessageID != "" && a.selectMessageByID(event.SelectMessageID) && event.WindowedHistory {
 			// ensureSelectedVisible scrolls the minimum, which lands the first unread on the

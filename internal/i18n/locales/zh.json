@@ -336,5 +336,17 @@
   "ui.unread_divider": "以下为未读",
   "ui.windowed_history": "End 回到最新",
   "status.at_tail": "已回到最新消息。",
-  "settings.jump_unread": "打开会话时定位到第一条未读"
+  "settings.jump_unread": "打开会话时定位到第一条未读",
+  "status.forwarded": "已转发 %d 条消息。",
+  "status.forward_nothing": "没有可转发的消息。",
+  "status.marked_for_forward": "已选中 %d 条。f 转发，F 不带作者转发。",
+  "status.unmarked": "已取消选中，还剩 %d 条。",
+  "status.marks_dropped": "有 %d 条已选中的消息不在当前视图内，已取消选中。",
+  "status.nothing_marked": "请先用 v 选中消息。",
+  "status.marks_cleared": "已清空选中。",
+  "forward.title": "转发到",
+  "forward.title_drop_author": "转发到（不带作者）",
+  "forward.hint": "输入以筛选 · Enter 发送 · Esc 取消",
+  "forward.saved_messages": "Saved Messages",
+  "forward.filter_label": "筛选："
 }

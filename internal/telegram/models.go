@@ -196,6 +196,7 @@ const (
 	CommandSaveDraft        CommandKind = "save_draft"
 	CommandSetTyping        CommandKind = "set_typing"
 	CommandMarkRead         CommandKind = "mark_read"
+	CommandForwardMessages  CommandKind = "forward_messages"
 )
 
 type Command struct {
@@ -219,6 +220,10 @@ type Command struct {
 	// than the newest one. A parameter rather than its own command, because two commands would
 	// race two viewport replacements.
 	JumpToUnread bool
+	// Forwarding. ForwardTarget is the destination peer key, or SavedMessagesTarget.
+	ForwardIDs        []string
+	ForwardTarget     string
+	ForwardDropAuthor bool
 }
 
 type MentionSuggestion struct {
