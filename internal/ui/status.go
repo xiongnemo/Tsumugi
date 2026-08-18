@@ -148,6 +148,12 @@ func (a *App) messagesPaneTitleText() string {
 	case "", "welcome", "empty":
 		return t
 	}
+	// Directly after the peer title: the title is truncated from the right on a narrow
+	// terminal, and who is typing is worth more than the loaded-count and date range that
+	// follow it.
+	if hint := a.typingTitleHint(); hint != "" {
+		t += " · " + hint
+	}
 	msgs := a.messages.Messages()
 	if len(msgs) == 0 {
 		return fmt.Sprintf("%s · %s", t, i18n.T(i18n.KeyStatusChatNoMessages))

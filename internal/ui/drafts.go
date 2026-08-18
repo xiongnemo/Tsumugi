@@ -110,6 +110,10 @@ func (a *App) replyTargetID() int {
 func (a *App) leaveChatForDraft() {
 	if a.currentChat != "" {
 		a.flushDraft(a.currentChat)
+		// Stop our own indicator on the peer we are abandoning, and forget theirs so coming
+		// back does not briefly show a stale one.
+		a.cancelTyping()
+		a.clearTypingForPeer(a.currentChat)
 	}
 	if a.composer != nil && a.composer.GetText() != "" {
 		a.setComposerText("")

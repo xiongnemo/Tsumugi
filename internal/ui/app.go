@@ -90,6 +90,12 @@ type App struct {
 	draftTimer       *time.Timer
 	draftPeer        string
 	draftFirstEditAt time.Time
+	// Incoming typing, per peer then per typist. Kept per peer rather than for the open chat
+	// only so that switching back and forth cannot show another chat's indicator.
+	typingByPeer       map[string]map[string]typingState
+	typingExpiry       *time.Timer
+	typingNotifiedPeer string
+	typingNotifiedAt   time.Time
 }
 
 func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
@@ -226,6 +232,7 @@ func (a *App) build() {
 		a.onComposerChanged(a.composer.GetText())
 		a.syncComposerLayout()
 		a.scheduleDraftSave()
+		a.notifyTyping()
 	})
 
 	a.app.SetRoot(a.root, true)
@@ -578,6 +585,8 @@ func (a *App) applyEvent(event telegram.Event) {
 		a.applyInlineThumb(event)
 	case telegram.EventDraft:
 		a.applyDraftEvent(event)
+	case telegram.EventTyping:
+		a.applyTypingEvent(event)
 	case telegram.EventReadOutbox:
 		if event.PeerKey == a.currentChat && strings.HasPrefix(event.PeerKey, "user:") {
 			a.messages.ApplyReadOutboxMaxID(event.ReadOutboxMaxID, true)

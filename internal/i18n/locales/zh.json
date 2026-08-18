@@ -327,5 +327,10 @@
   "ui.footer_send": "Ctrl+J 发送",
   "ui.compose_placeholder": "消息…（Enter 换行，Ctrl+J 发送）",
   "status.draft_restored": "已恢复草稿",
-  "status.draft_updated_elsewhere": "草稿已在其他客户端更改"
+  "status.draft_updated_elsewhere": "草稿已在其他客户端更改",
+  "typing.is_typing": "%s 正在输入…",
+  "typing.is_recording_voice": "%s 正在录音…",
+  "typing.is_uploading": "%s 正在发送文件…",
+  "typing.is_active": "%s 正在操作…",
+  "typing.many": "%d 人正在输入…"
 }

@@ -233,6 +233,8 @@ func (a *App) submitComposer() {
 			a.draftTimer = nil
 		}
 		a.draftPeer = ""
+		// The message is on its way; the indicator must not outlive it.
+		a.cancelTyping()
 		a.setComposerText("")
 		a.closeComposeSuggestions()
 		a.clearReplyTarget()

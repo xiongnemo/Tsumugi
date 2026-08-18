@@ -327,5 +327,10 @@
   "ui.footer_send": "Ctrl+J send",
   "ui.compose_placeholder": "Message… (Enter = new line, Ctrl+J = send)",
   "status.draft_restored": "Draft restored",
-  "status.draft_updated_elsewhere": "Draft changed in another session"
+  "status.draft_updated_elsewhere": "Draft changed in another session",
+  "typing.is_typing": "%s is typing…",
+  "typing.is_recording_voice": "%s is recording audio…",
+  "typing.is_uploading": "%s is sending a file…",
+  "typing.is_active": "%s is active…",
+  "typing.many": "%d people are typing…"
 }

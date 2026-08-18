@@ -25,6 +25,7 @@ const (
 	EventPinnedMessages          EventKind = "pinned_messages"
 	EventInlineResultThumb       EventKind = "inline_result_thumb"
 	EventDraft                   EventKind = "draft"
+	EventTyping                  EventKind = "typing"
 )
 
 type Event struct {
@@ -67,6 +68,11 @@ type Event struct {
 	DraftText      string
 	DraftReplyToID int
 	DraftRemote    bool
+	// Typing state for one peer. TypingActionKey is a translation key rather than text
+	// (the backend never emits display strings); TypingActive false means "stopped".
+	TypingName      string
+	TypingActionKey string
+	TypingActive    bool
 }
 
 // BackgroundKind identifies low-priority work shown in the status bar right column.
@@ -178,6 +184,7 @@ const (
 	CommandJumpToMessage    CommandKind = "jump_to_message"
 	CommandFetchInlineThumb CommandKind = "fetch_inline_thumb"
 	CommandSaveDraft        CommandKind = "save_draft"
+	CommandSetTyping        CommandKind = "set_typing"
 )
 
 type Command struct {
@@ -195,6 +202,8 @@ type Command struct {
 	QueryID         int64
 	ResultID        string
 	MentionEntities []MessageEntityMentionName
+	// Typing distinguishes "I am composing" from "I stopped" for CommandSetTyping.
+	Typing bool
 }
 
 type MentionSuggestion struct {

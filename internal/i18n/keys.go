@@ -331,4 +331,13 @@ const (
 	KeyProxyClose        = "proxy.close"
 	KeyProxyNewName      = "proxy.new_name"
 	KeyProxyEnvironment  = "proxy.environment"
+
+	// One key per action verb rather than a shared "X is" prefix plus a verb fragment:
+	// the split does not survive translation into Chinese, where the verb and the subject
+	// marker are not separable that way.
+	KeyTypingIsTyping         = "typing.is_typing"
+	KeyTypingIsRecordingVoice = "typing.is_recording_voice"
+	KeyTypingIsUploading      = "typing.is_uploading"
+	KeyTypingIsActive         = "typing.is_active"
+	KeyTypingMany             = "typing.many"
 )

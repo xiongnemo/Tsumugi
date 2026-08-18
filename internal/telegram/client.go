@@ -57,6 +57,10 @@ type GotdClient struct {
 	mentionCache         map[string]mentionCacheEntry
 	commandCache         map[string]commandCacheEntry
 	inlineCache          map[string]inlineCacheEntry
+	typingMu             sync.Mutex
+	typingSentAt         map[string]time.Time
+	// typingSend replaces the MessagesSetTyping call in tests.
+	typingSend func(context.Context, *tg.MessagesSetTypingRequest) (bool, error)
 }
 
 type pendingMessage struct {
@@ -76,6 +80,7 @@ func NewGotdClient(cfg config.Config, store *storage.DB) *GotdClient {
 		mentionCache:         make(map[string]mentionCacheEntry),
 		commandCache:         make(map[string]commandCacheEntry),
 		inlineCache:          make(map[string]inlineCacheEntry),
+		typingSentAt:         make(map[string]time.Time),
 	}
 }
 
@@ -760,6 +765,39 @@ func (c *GotdClient) registerUpdateHandlers(dispatcher *tg.UpdateDispatcher, acc
 		c.applyDraftUpdate(ctx, *accountID, events, update)
 		return nil
 	})
+	dispatcher.OnUserTyping(func(ctx context.Context, e tg.Entities, update *tg.UpdateUserTyping) error {
+		if accountID == nil || *accountID == "" {
+			return nil
+		}
+		if topMsgID, ok := update.GetTopMsgID(); ok && topMsgID != 0 {
+			return nil
+		}
+		entities := entitiesByID{users: e.Users, chats: e.Chats, channels: e.Channels}
+		// In a private chat the peer and the typist are the same user.
+		from := &tg.PeerUser{UserID: update.UserID}
+		c.emitTyping(ctx, *accountID, events, peerKey("user", update.UserID), from, entities, update.Action)
+		return nil
+	})
+	dispatcher.OnChatUserTyping(func(ctx context.Context, e tg.Entities, update *tg.UpdateChatUserTyping) error {
+		if accountID == nil || *accountID == "" {
+			return nil
+		}
+		entities := entitiesByID{users: e.Users, chats: e.Chats, channels: e.Channels}
+		c.emitTyping(ctx, *accountID, events, peerKey("chat", update.ChatID), update.FromID, entities, update.Action)
+		return nil
+	})
+	dispatcher.OnChannelUserTyping(func(ctx context.Context, e tg.Entities, update *tg.UpdateChannelUserTyping) error {
+		if accountID == nil || *accountID == "" {
+			return nil
+		}
+		if topMsgID, ok := update.GetTopMsgID(); ok && topMsgID != 0 {
+			// Forum topic typing belongs to the topic, not the channel view; deferred.
+			return nil
+		}
+		entities := entitiesByID{users: e.Users, chats: e.Chats, channels: e.Channels}
+		c.emitTyping(ctx, *accountID, events, peerKey("channel", update.ChannelID), update.FromID, entities, update.Action)
+		return nil
+	})
 	dispatcher.OnDeleteMessages(func(ctx context.Context, _ tg.Entities, update *tg.UpdateDeleteMessages) error {
 		if c.store != nil && accountID != nil && *accountID != "" {
 			if peers, err := c.store.PeerKeysForMessageIDs(ctx, *accountID, update.Messages); err == nil && len(peers) == 1 {
@@ -1236,6 +1274,8 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				go c.fetchInlineThumb(ctx, api, events, command)
 			case CommandSaveDraft:
 				go c.saveDraft(ctx, accountID, api, events, command)
+			case CommandSetTyping:
+				go c.setTyping(ctx, accountID, api, command.PeerKey, command.Typing)
 			}
 		}
 	}
