@@ -96,6 +96,10 @@ behaviour you may want to change.
   history gap hints appear in the message pane title.
 - Text message sending for the selected peer, including reply targets from the
   message action menu.
+- Per-chat drafts, synced with Telegram. Unsent text is saved as you type, restored
+  when you reopen the chat, and cleared once the message goes out. Drafts are stored
+  encrypted locally so they survive a quit, and a draft changed in another client is
+  picked up without ever overwriting text you are currently typing.
 - Compose suggestions for `@` mentions, `@inline_bot query` inline results, and
   `/` bot commands in the current chat. Inline bot results render as a grid of
   thumbnails rather than a list.

@@ -226,6 +226,13 @@ func (a *App) submitComposer() {
 			ReplyToID:       replyToID,
 			MentionEntities: entities,
 		}
+		// Cancel any pending draft save: the text is on its way out and the client clears the
+		// server-side draft once the send is confirmed.
+		if a.draftTimer != nil {
+			a.draftTimer.Stop()
+			a.draftTimer = nil
+		}
+		a.draftPeer = ""
 		a.setComposerText("")
 		a.closeComposeSuggestions()
 		a.clearReplyTarget()

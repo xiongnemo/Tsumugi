@@ -325,5 +325,7 @@
   "status.jumping_to_message": "正在跳转到消息……",
   "status.jumped_to_message": "已跳转到消息。",
   "ui.footer_send": "Ctrl+J 发送",
-  "ui.compose_placeholder": "消息…（Enter 换行，Ctrl+J 发送）"
+  "ui.compose_placeholder": "消息…（Enter 换行，Ctrl+J 发送）",
+  "status.draft_restored": "已恢复草稿",
+  "status.draft_updated_elsewhere": "草稿已在其他客户端更改"
 }

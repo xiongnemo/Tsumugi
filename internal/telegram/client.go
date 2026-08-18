@@ -277,6 +277,7 @@ func (c *GotdClient) loadDialogBatch(ctx context.Context, accountID string, api 
 	}
 	peers := make([]storage.Peer, 0, len(modified.GetDialogs()))
 	chats := make([]Chat, 0, len(modified.GetDialogs()))
+	var drafts []storage.Draft
 	var last storage.Peer
 	for index, dialog := range modified.GetDialogs() {
 		peer, chat, ok := normalizeDialog(accountID, dialog, messageByID, entities, batch.IndexBase+index)
@@ -290,6 +291,16 @@ func (c *GotdClient) loadDialogBatch(ctx context.Context, accountID string, api 
 		peers = append(peers, peer)
 		chats = append(chats, chat)
 		last = peer
+		if d, ok := dialog.(*tg.Dialog); ok {
+			if draft, ok := draftFromDialog(accountID, peer.Key, d); ok {
+				drafts = append(drafts, draft)
+			}
+		}
+	}
+	// Dialogs already carry drafts, so this costs no extra request. The dirty guard in
+	// SaveServerDrafts is what keeps a locally typed draft from being clobbered here.
+	if c.store != nil && len(drafts) > 0 {
+		_ = c.store.SaveServerDrafts(ctx, drafts)
 	}
 	return peers, chats, last, len(modified.GetDialogs()), len(peers), nil
 }
@@ -740,6 +751,13 @@ func (c *GotdClient) registerUpdateHandlers(dispatcher *tg.UpdateDispatcher, acc
 			c.saveUpdateState(ctx, events, storage.UpdateState{AccountID: *accountID, Pts: update.Pts})
 		}
 		sendEvent(ctx, events, Event{Kind: EventMessages, PeerKey: pk, RemoveMessageIDs: intIDsToStrings(update.Messages), StatusMsg: i18n.M(i18n.KeyStatusChannelMessagesDeleted)})
+		return nil
+	})
+	dispatcher.OnDraftMessage(func(ctx context.Context, _ tg.Entities, update *tg.UpdateDraftMessage) error {
+		if accountID == nil || *accountID == "" {
+			return nil
+		}
+		c.applyDraftUpdate(ctx, *accountID, events, update)
 		return nil
 	})
 	dispatcher.OnDeleteMessages(func(ctx context.Context, _ tg.Entities, update *tg.UpdateDeleteMessages) error {
@@ -1216,6 +1234,8 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				go c.jumpToMessage(ctx, accountID, api, events, command.PeerKey, command.MessageID)
 			case CommandFetchInlineThumb:
 				go c.fetchInlineThumb(ctx, api, events, command)
+			case CommandSaveDraft:
+				go c.saveDraft(ctx, accountID, api, events, command)
 			}
 		}
 	}
@@ -1302,6 +1322,7 @@ func (c *GotdClient) openChat(ctx context.Context, accountID string, api *tg.Cli
 		}
 	}()
 	go c.loadPeerPinnedMessage(ctx, accountID, api, events, peerKey)
+	c.sendPeerDraft(ctx, accountID, events, peerKey)
 	go func() {
 		if !c.isFocusedPeer(peerKey) {
 			return
@@ -1605,6 +1626,9 @@ func (c *GotdClient) sendText(ctx context.Context, accountID string, api *tg.Cli
 			RemoveMessageIDs: intIDsToStrings(removeIDs),
 			StatusMsg:        i18n.M(i18n.KeyStatusMessageSent),
 		})
+		// Only now that the server has the message. retrySendText deliberately does not
+		// do this: a failed row still holds the text the draft was covering for.
+		c.clearDraftAfterSend(ctx, accountID, api, peerKey)
 		return
 	}
 	sendEvent(ctx, events, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusMessageSubmitted)})

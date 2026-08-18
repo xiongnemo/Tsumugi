@@ -325,5 +325,7 @@
   "status.jumping_to_message": "Jumping to message...",
   "status.jumped_to_message": "Jumped to message.",
   "ui.footer_send": "Ctrl+J send",
-  "ui.compose_placeholder": "Message… (Enter = new line, Ctrl+J = send)"
+  "ui.compose_placeholder": "Message… (Enter = new line, Ctrl+J = send)",
+  "status.draft_restored": "Draft restored",
+  "status.draft_updated_elsewhere": "Draft changed in another session"
 }

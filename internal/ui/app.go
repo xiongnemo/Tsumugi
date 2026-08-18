@@ -85,6 +85,11 @@ type App struct {
 	control          chan<- ControlEvent
 	onboardingActive bool
 	suggest          *composeSuggestState
+	// Draft debounce state. draftPeer is the chat the pending save belongs to, so a switch
+	// away files it against the right peer.
+	draftTimer       *time.Timer
+	draftPeer        string
+	draftFirstEditAt time.Time
 }
 
 func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
@@ -220,6 +225,7 @@ func (a *App) build() {
 	a.composer.SetChangedFunc(func() {
 		a.onComposerChanged(a.composer.GetText())
 		a.syncComposerLayout()
+		a.scheduleDraftSave()
 	})
 
 	a.app.SetRoot(a.root, true)
@@ -253,6 +259,7 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 	}
 	switch event.Key() {
 	case tcell.KeyCtrlC:
+		a.flushDraft(a.currentChat)
 		a.app.Stop()
 		return nil
 	case tcell.KeyUp:
@@ -273,6 +280,9 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case tcell.KeyTAB:
+		if a.composerHasFocus() {
+			a.flushDraft(a.currentChat)
+		}
 		if a.msgActionForm != nil {
 			f := a.app.GetFocus()
 			if f != a.msgActionDetail && f != a.msgActionPreview {
@@ -295,6 +305,9 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		a.switchFocus()
 		return nil
 	case tcell.KeyBacktab:
+		if a.composerHasFocus() {
+			a.flushDraft(a.currentChat)
+		}
 		if a.msgActionForm != nil {
 			f := a.app.GetFocus()
 			switch {
@@ -316,6 +329,9 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		a.switchFocusPrevious()
 		return nil
 	case tcell.KeyEsc:
+		if a.composerHasFocus() {
+			a.flushDraft(a.currentChat)
+		}
 		// Every overlay must be dismissed from here. This capture runs before the focused
 		// primitive and returns nil unconditionally, so an overlay's own SetInputCapture
 		// never sees Esc and any cleanup it does there is dead code.
@@ -370,6 +386,7 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case 'q':
+		a.flushDraft(a.currentChat)
 		a.app.Stop()
 		return nil
 	case 'i':
@@ -559,6 +576,8 @@ func (a *App) applyEvent(event telegram.Event) {
 		a.applyPinnedMessages(event.PeerKey, event.Messages)
 	case telegram.EventInlineResultThumb:
 		a.applyInlineThumb(event)
+	case telegram.EventDraft:
+		a.applyDraftEvent(event)
 	case telegram.EventReadOutbox:
 		if event.PeerKey == a.currentChat && strings.HasPrefix(event.PeerKey, "user:") {
 			a.messages.ApplyReadOutboxMaxID(event.ReadOutboxMaxID, true)
@@ -677,6 +696,7 @@ func (a *App) refreshChats() {
 		peerID := chat.ID
 		title := chat.Title
 		a.chats.AddItem(render.ChatRow(display, rowWidth), render.Truncate(display.LastPreview, rowWidth), 0, func() {
+			a.leaveChatForDraft()
 			a.currentChat = peerID
 			a.resetGapFillQueue()
 			a.currentTitle = title

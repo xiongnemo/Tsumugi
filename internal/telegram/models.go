@@ -24,6 +24,7 @@ const (
 	EventPeerPinned              EventKind = "peer_pinned"
 	EventPinnedMessages          EventKind = "pinned_messages"
 	EventInlineResultThumb       EventKind = "inline_result_thumb"
+	EventDraft                   EventKind = "draft"
 )
 
 type Event struct {
@@ -61,6 +62,11 @@ type Event struct {
 	// ResultID/ThumbPreview carry one rendered inline-result thumbnail back to the grid.
 	ResultID     string
 	ThumbPreview string
+	// Draft restore. DraftRemote marks a change made in another session, which must not
+	// overwrite text the user is currently typing.
+	DraftText      string
+	DraftReplyToID int
+	DraftRemote    bool
 }
 
 // BackgroundKind identifies low-priority work shown in the status bar right column.
@@ -171,6 +177,7 @@ const (
 	CommandLoadPinned       CommandKind = "load_pinned"
 	CommandJumpToMessage    CommandKind = "jump_to_message"
 	CommandFetchInlineThumb CommandKind = "fetch_inline_thumb"
+	CommandSaveDraft        CommandKind = "save_draft"
 )
 
 type Command struct {

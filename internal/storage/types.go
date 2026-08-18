@@ -72,6 +72,20 @@ type Message struct {
 	ServiceArg string
 }
 
+// Draft is a per-peer unsent message. Text is sealed like message bodies because it is user
+// content. Dirty marks a local edit the server has not accepted yet, which is what stops the
+// repeating background dialog sweep from overwriting something still being typed.
+type Draft struct {
+	AccountID    string
+	PeerKey      string
+	Text         string
+	ReplyToID    int
+	EntitiesJSON string
+	ServerDate   int
+	Dirty        bool
+	UpdatedAt    time.Time
+}
+
 type DialogFilter struct {
 	AccountID       string
 	ID              int

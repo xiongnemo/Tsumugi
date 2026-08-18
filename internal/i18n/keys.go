@@ -225,6 +225,8 @@ const (
 	KeyStatusJumpingToMessage         = "status.jumping_to_message"
 	KeyStatusJumpedToMessage          = "status.jumped_to_message"
 	KeyStatusLoadingPinned            = "status.loading_pinned"
+	KeyStatusDraftRestored            = "status.draft_restored"
+	KeyStatusDraftUpdatedElsewhere    = "status.draft_updated_elsewhere"
 	KeyStatusAuthEmpty                = "status.auth_empty"
 	KeyStatusAuthSubmitted            = "status.auth_submitted"
 

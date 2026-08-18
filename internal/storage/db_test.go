@@ -327,3 +327,111 @@ func TestPeerPreviewKeyRoundTrip(t *testing.T) {
 		t.Fatalf("ListPeers = %+v", peers)
 	}
 }
+
+func TestDraftRoundTripSealsText(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+
+	if err := db.SaveLocalDraft(ctx, Draft{
+		AccountID: "user:1",
+		PeerKey:   "chat:3",
+		Text:      "half typed 中文",
+		ReplyToID: 512,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok, err := db.Draft(ctx, "user:1", "chat:3")
+	if err != nil || !ok {
+		t.Fatalf("Draft: %v ok=%v", err, ok)
+	}
+	if got.Text != "half typed 中文" || got.ReplyToID != 512 {
+		t.Fatalf("draft = %q/%d", got.Text, got.ReplyToID)
+	}
+	if !got.Dirty {
+		t.Fatal("a local draft must be dirty so a dialog sync cannot overwrite it")
+	}
+
+	// Draft text is user content; it must not be readable in the clear.
+	var blob []byte
+	if err := db.sql.QueryRowContext(ctx, `SELECT text_blob FROM drafts WHERE peer_key = 'chat:3'`).Scan(&blob); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(blob, []byte("half typed")) {
+		t.Fatal("draft text stored in the clear")
+	}
+}
+
+// The background dialog sweep repeats, so a server draft must never overwrite text the user is
+// still typing.
+func TestSaveServerDraftsRespectsDirtyAndAge(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+
+	if err := db.SaveLocalDraft(ctx, Draft{AccountID: "user:1", PeerKey: "chat:3", Text: "mine"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveServerDrafts(ctx, []Draft{{AccountID: "user:1", PeerKey: "chat:3", Text: "theirs", ServerDate: 999}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := db.Draft(ctx, "user:1", "chat:3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "mine" {
+		t.Fatalf("draft = %q, want the dirty local draft preserved", got.Text)
+	}
+
+	// Once synced, a newer server draft wins.
+	if err := db.MarkDraftSynced(ctx, "user:1", "chat:3", 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveServerDrafts(ctx, []Draft{{AccountID: "user:1", PeerKey: "chat:3", Text: "theirs", ServerDate: 999}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = db.Draft(ctx, "user:1", "chat:3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "theirs" {
+		t.Fatalf("draft = %q, want the newer server draft", got.Text)
+	}
+
+	// An older server draft must not win.
+	if err := db.SaveServerDrafts(ctx, []Draft{{AccountID: "user:1", PeerKey: "chat:3", Text: "stale", ServerDate: 5}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = db.Draft(ctx, "user:1", "chat:3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "theirs" {
+		t.Fatalf("draft = %q, want the stale server draft ignored", got.Text)
+	}
+}
+
+func TestSaveServerDraftsEmptyClearsOnlyCleanRows(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+
+	if err := db.SaveLocalDraft(ctx, Draft{AccountID: "user:1", PeerKey: "chat:3", Text: "typing"}); err != nil {
+		t.Fatal(err)
+	}
+	// Cleared elsewhere, but we have unsynced local text: keep ours.
+	if err := db.SaveServerDrafts(ctx, []Draft{{AccountID: "user:1", PeerKey: "chat:3"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := db.Draft(ctx, "user:1", "chat:3"); !ok {
+		t.Fatal("dirty draft was deleted by an empty server draft")
+	}
+
+	if err := db.MarkDraftSynced(ctx, "user:1", "chat:3", 10); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveServerDrafts(ctx, []Draft{{AccountID: "user:1", PeerKey: "chat:3"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := db.Draft(ctx, "user:1", "chat:3"); ok {
+		t.Fatal("clean draft should have been cleared")
+	}
+}
