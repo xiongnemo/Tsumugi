@@ -123,6 +123,11 @@ type App struct {
 	searchQuery     string
 	searchScope     string
 	searchRequestID int64
+	// QR login overlay. Rebuilt never, refreshed in place: QR.Auth re-invokes its show callback
+	// on every token expiry.
+	qrView    *tview.TextView
+	qrURLView *tview.TextView
+	qrPrompt  *telegram.AuthPrompt
 }
 
 func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
@@ -1608,6 +1613,12 @@ func (a *App) showProxySettings() {
 }
 
 func (a *App) showAuthPrompt(prompt *telegram.AuthPrompt) {
+	if prompt.Kind == telegram.AuthPromptQR {
+		a.showQRPrompt(prompt)
+		return
+	}
+	// Any other prompt means the QR stage is over (typically the 2FA password after a scan).
+	a.closeQRPrompt()
 	input := tview.NewInputField().
 		SetLabel(i18n.T(prompt.LabelKey) + ": ").
 		SetFieldWidth(32)

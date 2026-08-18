@@ -100,21 +100,38 @@ func (a *App) showOnboarding() {
 	}
 
 	showAuthMode = func() {
+		// Three entries over two fields: QR is a user session reached a different way, not a
+		// third kind of session, so it stays out of AuthMode and only sets LoginMethod.
 		mode := draft.AuthMode
+		method := draft.LoginMethod
 		initial := 0
-		if mode == config.AuthBot {
+		switch {
+		case mode == config.AuthBot:
+			initial = 2
+		case method == config.LoginQR:
 			initial = 1
 		}
 		form := tview.NewForm()
-		form.AddDropDown(i18n.T(i18n.KeyOnboardingAuthMode), []string{i18n.T(i18n.KeyOnboardingAuthUser), i18n.T(i18n.KeyOnboardingAuthBot)}, initial, func(_ string, index int) {
-			if index == 1 {
+		form.AddDropDown(i18n.T(i18n.KeyOnboardingAuthMode), []string{
+			i18n.T(i18n.KeyOnboardingAuthUser),
+			i18n.T(i18n.KeyOnboardingLoginQR),
+			i18n.T(i18n.KeyOnboardingAuthBot),
+		}, initial, func(_ string, index int) {
+			switch index {
+			case 2:
 				mode = config.AuthBot
-			} else {
+				method = config.LoginPhone
+			case 1:
 				mode = config.AuthUser
+				method = config.LoginQR
+			default:
+				mode = config.AuthUser
+				method = config.LoginPhone
 			}
 		}).
 			AddButton(i18n.T(i18n.KeyOnboardingNext), func() {
 				draft.AuthMode = mode
+				draft.LoginMethod = method
 				status.SetText(i18n.T(i18n.KeyOnboardingStatusModeSaved))
 				showAPI()
 			}).
@@ -155,6 +172,12 @@ func (a *App) showOnboarding() {
 	}
 
 	showIdentity = func() {
+		if draft.AuthMode == config.AuthUser && draft.LoginMethod == config.LoginQR {
+			// Nothing to enter: the code is scanned. This is the "separate auth path rather
+			// than another form page" the onboarding design calls for.
+			showSummary()
+			return
+		}
 		labelKey := i18n.KeyOnboardingPhone
 		value := draft.Phone
 		secret := false
@@ -197,9 +220,13 @@ func (a *App) showOnboarding() {
 	showSummary = func() {
 		mode := i18n.T(i18n.KeyOnboardingAuthUser)
 		identity := draft.Phone
-		if draft.AuthMode == config.AuthBot {
+		switch {
+		case draft.AuthMode == config.AuthBot:
 			mode = i18n.T(i18n.KeyOnboardingAuthBot)
 			identity = i18n.T(i18n.KeyOnboardingBotTokenHidden)
+		case draft.LoginMethod == config.LoginQR:
+			mode = i18n.T(i18n.KeyOnboardingLoginQR)
+			identity = i18n.T(i18n.KeyOnboardingLoginQR)
 		}
 		body := fmt.Sprintf("%s\n\n%s: %s\n%s: %d\n%s: %s\n%s",
 			i18n.T(i18n.KeyOnboardingSummaryBody),

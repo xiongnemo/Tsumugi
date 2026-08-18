@@ -362,5 +362,14 @@
   "search.scope_chats": "Chat list",
   "search.scope_global": "All chats",
   "search.first": "first",
-  "search.last": "last"
+  "search.last": "last",
+  "auth.qr_title": "Scan to log in",
+  "auth.qr_label": "QR code",
+  "auth.qr_help": "In Telegram on your phone: Settings → Devices → Link Desktop Device, then scan this code. The code refreshes on its own.",
+  "auth.qr_password_help": "Scanned. This account has two-step verification; enter your cloud password.",
+  "auth.qr_copied_url": "Login URL copied.",
+  "auth.qr_use_phone": "Use phone number instead",
+  "onboarding.login_method": "Login method",
+  "onboarding.login_phone": "Phone number",
+  "onboarding.login_qr": "QR code"
 }

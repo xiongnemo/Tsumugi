@@ -63,6 +63,12 @@ behaviour you may want to change.
 
 - User login with phone/code/2FA through `gotd/td`.
 - Bot login with a bot token through the same backend.
+- QR login as an alternative to phone + code: pick **QR code** as the login method in
+  the first-run wizard (or set `TSUMUGI_LOGIN_METHOD=qr`), then scan the code with
+  Telegram on your phone under Settings → Devices → Link Desktop Device. The code
+  refreshes itself, `y` copies the raw `tg://login` URL if your terminal renders it badly,
+  and `p` falls back to phone login. Accounts with two-step verification are prompted for
+  the cloud password after scanning.
 - Shared event pipeline for connection status, dialogs, and normalized app
   state.
 - SQLite-backed local storage for accounts, peers, messages, sync metadata,

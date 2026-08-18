@@ -27,6 +27,8 @@ const (
 	settingTelegramAPIHash  = "telegram.api_hash"
 	settingTelegramPhone    = "telegram.phone"
 	settingTelegramBotToken = "telegram.bot_token"
+	// Not secret: knowing that an account logs in by QR reveals nothing.
+	settingTelegramLoginMethod = "telegram.login_method"
 )
 
 func New(cfg config.Config) *App {
@@ -210,6 +212,11 @@ func applyStoredTelegramConfig(ctx context.Context, db *storage.DB, cfg *config.
 			cfg.BotToken = value
 		}
 	}
+	if value, ok, err := db.GetSetting(ctx, settingTelegramLoginMethod); err != nil {
+		return err
+	} else if ok && value != "" {
+		cfg.LoginMethod = config.ParseLoginMethod(value)
+	}
 	return nil
 }
 
@@ -226,11 +233,22 @@ func saveTelegramConfig(ctx context.Context, db *storage.DB, cfg config.Config) 
 	if err := db.SetSecretSetting(ctx, settingTelegramAPIHash, cfg.APIHash); err != nil {
 		return err
 	}
+	if err := db.SetSetting(ctx, settingTelegramLoginMethod, string(cfg.LoginMethod)); err != nil {
+		return err
+	}
 	if cfg.AuthMode == config.AuthBot {
 		if err := db.SetSecretSetting(ctx, settingTelegramBotToken, cfg.BotToken); err != nil {
 			return err
 		}
 		return db.DeleteSettings(ctx, settingTelegramPhone)
+	}
+	if cfg.LoginMethod == config.LoginQR {
+		// A QR login has no phone number to store, and a stale one from a previous phone login
+		// would change sessionPath's identity on the next start.
+		if err := db.DeleteSettings(ctx, settingTelegramPhone); err != nil {
+			return err
+		}
+		return db.DeleteSettings(ctx, settingTelegramBotToken)
 	}
 	if err := db.SetSecretSetting(ctx, settingTelegramPhone, cfg.Phone); err != nil {
 		return err
@@ -251,6 +269,7 @@ func clearTelegramAuth(ctx context.Context, db *storage.DB, cfg config.Config) e
 		settingTelegramAPIHash,
 		settingTelegramPhone,
 		settingTelegramBotToken,
+		settingTelegramLoginMethod,
 	)
 }
 

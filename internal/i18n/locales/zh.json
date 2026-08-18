@@ -362,5 +362,14 @@
   "search.scope_chats": "会话列表",
   "search.scope_global": "全部会话",
   "search.first": "第一",
-  "search.last": "最后一"
+  "search.last": "最后一",
+  "auth.qr_title": "扫码登录",
+  "auth.qr_label": "二维码",
+  "auth.qr_help": "在手机 Telegram 中：设置 → 设备 → 关联桌面设备，然后扫描此二维码。二维码会自动刷新。",
+  "auth.qr_password_help": "已扫码。此账号启用了两步验证，请输入云密码。",
+  "auth.qr_copied_url": "已复制登录链接。",
+  "auth.qr_use_phone": "改用手机号登录",
+  "onboarding.login_method": "登录方式",
+  "onboarding.login_phone": "手机号",
+  "onboarding.login_qr": "二维码"
 }

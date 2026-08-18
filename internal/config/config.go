@@ -17,6 +17,27 @@ const (
 	AuthBot  AuthMode = "bot"
 )
 
+// LoginMethod selects how a user session is established.
+//
+// Deliberately a separate axis from AuthMode rather than a third mode. AuthMode is a capability
+// discriminator: it drives Capabilities(), the dialogs-versus-bot-console branch,
+// ReadyForTelegram, saveTelegramConfig, the footer and sessionPath. A QR session is an ordinary
+// user session with identical capabilities, so a third mode would force every `== AuthUser` check
+// in the codebase to become `!= AuthBot` for no semantic gain.
+type LoginMethod string
+
+const (
+	LoginPhone LoginMethod = "phone"
+	LoginQR    LoginMethod = "qr"
+)
+
+func ParseLoginMethod(value string) LoginMethod {
+	if strings.EqualFold(strings.TrimSpace(value), string(LoginQR)) {
+		return LoginQR
+	}
+	return LoginPhone
+}
+
 type CLIFlags struct {
 	ConfigPath string
 	AuthMode   string
@@ -45,6 +66,7 @@ const (
 
 type Config struct {
 	AuthMode        AuthMode
+	LoginMethod     LoginMethod
 	SyncMode        SyncMode
 	APIID           int
 	APIHash         string
@@ -75,6 +97,7 @@ func Load(flags CLIFlags) (Config, error) {
 
 	cfg := Config{
 		AuthMode:        AuthUser,
+		LoginMethod:     LoginPhone,
 		SyncMode:        SyncLazy,
 		APIID:           firstInt(flags.APIID, envAPIID),
 		APIHash:         firstString(flags.APIHash, envAPIHash),
@@ -99,6 +122,10 @@ func Load(flags CLIFlags) (Config, error) {
 	if cfg.AuthMode == AuthBot && cfg.BotToken == "" {
 		cfg.BotToken = os.Getenv("BOT_TOKEN")
 		cfg.BotTokenFromEnv = strings.TrimSpace(cfg.BotToken) != ""
+	}
+
+	if method := strings.TrimSpace(os.Getenv("TSUMUGI_LOGIN_METHOD")); method != "" {
+		cfg.LoginMethod = ParseLoginMethod(method)
 	}
 
 	syncMode := firstString(os.Getenv("TSUMUGI_SYNC_MODE"))
@@ -148,11 +175,16 @@ func (c Config) NeedsOnboarding() bool {
 	if c.AuthMode == AuthBot {
 		return c.BotToken == ""
 	}
+	// QR login has nothing to type: the code is scanned instead of a number being entered.
+	if c.LoginMethod == LoginQR {
+		return false
+	}
 	return c.Phone == ""
 }
 
 func (c Config) WithoutTelegramAuth() Config {
 	c.AuthMode = AuthUser
+	c.LoginMethod = LoginPhone
 	c.APIID = 0
 	c.APIHash = ""
 	c.BotToken = ""

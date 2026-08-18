@@ -18,6 +18,7 @@ import (
 
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
+	"github.com/gotd/td/telegram/auth/qrlogin"
 	"github.com/gotd/td/tg"
 
 	"github.com/nemo/Tsumugi/internal/config"
@@ -111,6 +112,13 @@ func (c *GotdClient) Run(ctx context.Context, events chan<- Event, commands <-ch
 	var api *tg.Client
 	dispatcher := tg.NewUpdateDispatcher()
 	c.registerUpdateHandlers(&dispatcher, &accountID, &api, events)
+	// Registered here, not inside the Run callback: updateLoginToken arrives on the normal
+	// update stream, and a handler added after Run has started never sees it — the QR flow then
+	// hangs until expiry, forever.
+	var qrLoggedIn qrlogin.LoggedIn
+	if c.cfg.AuthMode == config.AuthUser && c.cfg.LoginMethod == config.LoginQR {
+		qrLoggedIn = registerQRLogin(&dispatcher)
+	}
 	options := telegram.Options{
 		SessionStorage: &telegram.FileSessionStorage{Path: sessionPath},
 		Device:         deviceConfig(),
@@ -127,7 +135,7 @@ func (c *GotdClient) Run(ctx context.Context, events chan<- Event, commands <-ch
 
 	return client.Run(ctx, func(ctx context.Context) error {
 		sendEvent(ctx, events, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusConnecting)})
-		if err := c.authenticate(ctx, client, events); err != nil {
+		if err := c.authenticate(ctx, client, events, qrLoggedIn); err != nil {
 			return err
 		}
 
@@ -176,12 +184,21 @@ func (c *GotdClient) Run(ctx context.Context, events chan<- Event, commands <-ch
 	})
 }
 
-func (c *GotdClient) authenticate(ctx context.Context, client *telegram.Client, events chan<- Event) error {
+func (c *GotdClient) authenticate(ctx context.Context, client *telegram.Client, events chan<- Event, qrLoggedIn qrlogin.LoggedIn) error {
 	if c.cfg.AuthMode == config.AuthBot {
 		if _, err := client.Auth().Bot(ctx, c.cfg.BotToken); err != nil {
 			return fmt.Errorf("bot auth: %w", err)
 		}
 		return nil
+	}
+
+	// An existing session short-circuits both methods, so the QR branch only runs when there is
+	// actually something to authorise.
+	if status, err := client.Auth().Status(ctx); err == nil && status.Authorized {
+		return nil
+	}
+	if c.cfg.LoginMethod == config.LoginQR && qrLoggedIn != nil {
+		return c.authenticateQR(ctx, client, events, qrLoggedIn)
 	}
 
 	flow := auth.NewFlow(newUIAuth(c.cfg.Phone, events), auth.SendCodeOptions{})
@@ -2747,6 +2764,10 @@ func (c *GotdClient) sessionPath() string {
 	identity := c.cfg.Phone
 	if c.cfg.AuthMode == config.AuthBot {
 		identity = "bot"
+	} else if c.cfg.LoginMethod == config.LoginQR && identity == "" {
+		// Its own identity, so a QR session does not land on the phone-less user.json fallback
+		// and get mistaken for a phone login's session.
+		identity = "qr"
 	}
 	return filepath.Clean(c.cfg.SessionPath(identity))
 }

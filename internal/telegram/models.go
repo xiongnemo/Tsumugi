@@ -112,6 +112,10 @@ const (
 	AuthPromptPhone    AuthPromptKind = "phone"
 	AuthPromptCode     AuthPromptKind = "code"
 	AuthPromptPassword AuthPromptKind = "password"
+	// AuthPromptQR shows a scannable code instead of asking for input. It arrives through the
+	// same EventAuthPrompt path as the others, which is what keeps QR out of the wizard's form
+	// pages.
+	AuthPromptQR AuthPromptKind = "qr"
 )
 
 type AuthPrompt struct {
@@ -122,6 +126,10 @@ type AuthPrompt struct {
 	Reply     chan AuthResponse
 	HelpMsg   i18n.Msg
 	CanCancel bool
+	// QRPreview is the rendered code, already converted to tview markup. QRURL is the raw
+	// tg://login URL, always shown as the escape hatch when a terminal renders the code badly.
+	QRPreview string
+	QRURL     string
 }
 
 type AuthResponse struct {
