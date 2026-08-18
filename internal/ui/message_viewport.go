@@ -31,6 +31,8 @@ type MessageViewport struct {
 	placeholder              string
 	onAction                 func()
 	onReachOlder             func()
+	onSelectionChanged       func()
+	notifiedSelectedID       string
 	lastOlderFire            time.Time
 	gifTick                  int
 	inlineAnim               bool
@@ -285,6 +287,41 @@ func (v *MessageViewport) SetActionFunc(fn func()) {
 	v.onAction = fn
 }
 
+// SetOnSelectionChanged registers a callback fired when the selected message changes.
+//
+// Notification is deduplicated by message id and driven from the two input entry points plus
+// every method that moves the selection, rather than from each of the raw `v.selected =`
+// assignments. The dedup is what makes that safe: over-calling costs nothing, so a navigation
+// path is covered by default instead of only when someone remembers to notify. Callers used to
+// have to do this themselves, which is why broadcast view-marking never fired on PgUp, PgDn,
+// Home, End, the wheel, or a click.
+func (v *MessageViewport) SetOnSelectionChanged(fn func()) {
+	v.onSelectionChanged = fn
+}
+
+func (v *MessageViewport) notifySelectionChanged() {
+	key := v.selectedNotifyKey()
+	if key == v.notifiedSelectedID {
+		return
+	}
+	v.notifiedSelectedID = key
+	if v.onSelectionChanged != nil && key != "" {
+		v.onSelectionChanged()
+	}
+}
+
+// selectedNotifyKey identifies the selected message for deduplication.
+//
+// Qualified by chat, because message ids are per-peer: two chats can easily share a newest id,
+// and an unqualified key would silently swallow the notification on switching between them.
+func (v *MessageViewport) selectedNotifyKey() string {
+	if v.selected < 0 || v.selected >= len(v.messages) {
+		return ""
+	}
+	msg := v.messages[v.selected]
+	return msg.ChatID + "/" + msg.ID
+}
+
 func (v *MessageViewport) SetOnReachOlder(fn func()) {
 	v.onReachOlder = fn
 }
@@ -329,6 +366,9 @@ func (v *MessageViewport) SetMessages(messages []telegram.Message) {
 	v.followEnd = true
 	v.pendingBelow = 0
 	v.invalidateLayout()
+	// Landing on the newest message is what makes opening a chat mark it read; the read path
+	// needs no chat-open hook of its own.
+	v.notifySelectionChanged()
 }
 
 // SetMessagesReplace replaces the in-memory message list. When preserveViewport is true, the
@@ -391,6 +431,7 @@ func (v *MessageViewport) SetMessagesReplace(messages []telegram.Message, preser
 		}
 	}
 	v.ensureSelectedVisibleWithoutRelayout(ih)
+	v.notifySelectionChanged()
 }
 
 // ReplaceMessagesPreserveState swaps the visible message data without triggering
@@ -411,6 +452,7 @@ func (v *MessageViewport) ReplaceMessagesPreserveState(messages []telegram.Messa
 	v.followEnd = followEnd
 	v.pendingBelow = pendingBelow
 	v.invalidateLayout()
+	v.notifySelectionChanged()
 }
 
 func (v *MessageViewport) AppendMessage(message telegram.Message) {
@@ -444,6 +486,10 @@ func (v *MessageViewport) AppendMessage(message telegram.Message) {
 	} else {
 		v.pendingBelow++
 	}
+	// The highlight deliberately stays on the message it was on, even at the bottom. Marking
+	// the arrival read is App.appendMessage's job, driven by the tail being visible rather than
+	// by the cursor moving.
+	v.notifySelectionChanged()
 }
 
 // ApplyReadOutboxMaxID marks outgoing synced messages as read up to maxID (private chats only).
@@ -496,6 +542,7 @@ func (v *MessageViewport) RemoveIDs(ids []string) {
 		v.selected = -1
 	}
 	v.invalidateLayout()
+	v.notifySelectionChanged()
 }
 
 func (v *MessageViewport) Messages() []telegram.Message {
@@ -533,6 +580,7 @@ func (v *MessageViewport) SelectDelta(delta int) {
 	}
 	v.followEnd = false
 	v.ensureSelectedVisible()
+	v.notifySelectionChanged()
 }
 
 func (v *MessageViewport) SelectByID(id string) bool {
@@ -541,6 +589,7 @@ func (v *MessageViewport) SelectByID(id string) bool {
 			v.selected = i
 			v.followEnd = false
 			v.ensureSelectedVisible()
+			v.notifySelectionChanged()
 			return true
 		}
 	}
@@ -553,6 +602,7 @@ func (v *MessageViewport) ScrollToEnd() {
 	if len(v.messages) > 0 && v.selected < 0 {
 		v.selected = len(v.messages) - 1
 	}
+	v.notifySelectionChanged()
 }
 
 func (v *MessageViewport) Draw(screen tcell.Screen) {
@@ -633,6 +683,9 @@ func (v *MessageViewport) Draw(screen tcell.Screen) {
 
 func (v *MessageViewport) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return v.WrapInputHandler(func(event *tcell.EventKey, _ func(p tview.Primitive)) {
+		// Notify once at the end rather than per branch: PgUp, PgDn, Home, End and the wheel
+		// all move the selection, and the dedup makes a blanket call correct and cheap.
+		defer v.notifySelectionChanged()
 		switch event.Key() {
 		case tcell.KeyUp:
 			v.SelectDelta(-1)
@@ -692,6 +745,7 @@ func (v *MessageViewport) InputHandler() func(event *tcell.EventKey, setFocus fu
 
 func (v *MessageViewport) MouseHandler() func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
 	return v.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+		defer v.notifySelectionChanged()
 		x, y := event.Position()
 		switch action {
 		case tview.MouseScrollUp:

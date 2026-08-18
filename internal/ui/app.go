@@ -99,6 +99,12 @@ type App struct {
 	// readInboxMaxID is the highest read incoming message per peer, mirrored from the client so
 	// the unread divider and the jump target can be computed without a round trip.
 	readInboxMaxID map[string]int
+	// Mark-read coalescing. markReadPending holds the highest id waiting to be sent per peer,
+	// keyed by peer so a chat switch mid-interval cannot lose or misfile a read mark.
+	markReadPending   map[string]int
+	markReadSentMaxID map[string]int
+	markReadSentAt    time.Time
+	markReadTimer     *time.Timer
 }
 
 func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
@@ -200,6 +206,7 @@ func (a *App) build() {
 	a.messages.SetText(i18n.T(i18n.KeyUIWelcomeHint))
 	a.messages.SetActionFunc(a.showMessageActions)
 	a.messages.SetOnReachOlder(a.onReachOlderMessages)
+	a.messages.SetOnSelectionChanged(a.onMessageCursorMoved)
 	a.footer.SetText(render.Footer(string(a.cfg.AuthMode), version.String(), a.cfg.Proxy))
 
 	a.composeStack = tview.NewFlex().SetDirection(tview.FlexRow).
@@ -270,18 +277,17 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 	switch event.Key() {
 	case tcell.KeyCtrlC:
 		a.flushDraft(a.currentChat)
+		a.flushMarkRead()
 		a.app.Stop()
 		return nil
 	case tcell.KeyUp:
 		if focus == a.messages {
 			a.messages.SelectDelta(-1)
-			a.onMessageSelectionChanged()
 			return nil
 		}
 	case tcell.KeyDown:
 		if focus == a.messages {
 			a.messages.SelectDelta(1)
-			a.onMessageSelectionChanged()
 			return nil
 		}
 	case tcell.KeyEnter:
@@ -386,17 +392,16 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 	case 'j':
 		if focus == a.messages {
 			a.messages.SelectDelta(1)
-			a.onMessageSelectionChanged()
 			return nil
 		}
 	case 'k':
 		if focus == a.messages {
 			a.messages.SelectDelta(-1)
-			a.onMessageSelectionChanged()
 			return nil
 		}
 	case 'q':
 		a.flushDraft(a.currentChat)
+		a.flushMarkRead()
 		a.app.Stop()
 		return nil
 	case 'i':
@@ -573,8 +578,8 @@ func (a *App) applyEvent(event telegram.Event) {
 		} else {
 			a.setMessages(event.Messages, event.PreserveViewport)
 		}
-		if event.SelectMessageID != "" && a.selectMessageByID(event.SelectMessageID) {
-			a.onMessageSelectionChanged()
+		if event.SelectMessageID != "" {
+			a.selectMessageByID(event.SelectMessageID)
 		}
 	case telegram.EventPeerPinned:
 		if event.PeerKey != a.currentChat {
@@ -983,6 +988,11 @@ func (a *App) appendMessage(message telegram.Message) {
 	a.applyMessagesPaneTitle()
 	if n := a.messages.PendingBelow(); n > 0 {
 		a.setStatusMsg(i18n.KeyUINewBelow, n)
+	} else if !message.Outgoing {
+		// Nothing pending below means the view is following the tail, so the arrival is on
+		// screen and has been read. The highlight deliberately does not move (see
+		// MessageViewport.AppendMessage), so this cannot ride on the selection callback.
+		a.scheduleMarkReadUpTo(message.ChatID, message.ID)
 	}
 }
 
