@@ -323,5 +323,7 @@
   "status.loading_pinned": "正在加载置顶消息……",
   "pinned.loading": "正在加载置顶消息……",
   "status.jumping_to_message": "正在跳转到消息……",
-  "status.jumped_to_message": "已跳转到消息。"
+  "status.jumped_to_message": "已跳转到消息。",
+  "ui.footer_send": "Ctrl+J 发送",
+  "ui.compose_placeholder": "消息…（Enter 换行，Ctrl+J 发送）"
 }

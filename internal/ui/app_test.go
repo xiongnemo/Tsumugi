@@ -26,7 +26,7 @@ func newCaptureTestApp() *App {
 		folders:  tview.NewList(),
 		chats:    tview.NewList(),
 		messages: NewMessageViewport(),
-		composer: tview.NewInputField(),
+		composer: tview.NewTextArea(),
 		theme:    DefaultTheme(),
 	}
 }

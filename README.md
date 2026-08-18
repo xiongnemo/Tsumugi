@@ -274,6 +274,12 @@ UI labels. Editable profiles are stored in the local SQLite database.
   messages include the calendar date (`YYYY-MM-DD HH:MM`) so mixed-day threads
   stay readable
 - `i`: focus composer
+- In the composer, `Enter` inserts a new line and **`Ctrl+J`** sends. `Ctrl+Enter`
+  and `Alt+Enter` also send where the terminal delivers them — Windows Terminal
+  gives you `Ctrl+Enter`, a bare Linux console gives you `Alt+Enter`, and `Ctrl+J`
+  works everywhere because it is a literal control byte no terminal can intercept.
+  The composer grows from 1 to 6 text rows as you type, and a multi-line paste is
+  inserted as one block rather than sending on the first newline.
 - In the composer, type `@` for mention suggestions, `@inline_bot query` for
   inline bot results, or `/` for current-chat bot commands. When the inline
   suggestion panel is open, `Up`/`Down` changes the highlighted row, `Tab` or

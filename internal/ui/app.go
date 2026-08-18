@@ -34,7 +34,7 @@ type App struct {
 	folders          *tview.List
 	chats            *tview.List
 	messages         *MessageViewport
-	composer         *tview.InputField
+	composer         *tview.TextArea
 	composeStack     *tview.Flex
 	rightPane        *tview.Flex
 	footer           *tview.TextView
@@ -108,7 +108,7 @@ func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, comman
 			SetSelectedBackgroundColor(tcell.ColorDarkSlateGray).
 			SetSelectedTextColor(tcell.ColorWhite),
 		messages:         NewMessageViewport(),
-		composer:         tview.NewInputField().SetLabel("> "),
+		composer:         tview.NewTextArea(),
 		footer:           tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignLeft),
 		statusConn:       tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignLeft),
 		statusForeground: tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignLeft),
@@ -157,10 +157,12 @@ func (a *App) runInlineAnimTicker(ctx context.Context) {
 
 func (a *App) build() {
 	a.app.EnableMouse(true)
+	a.app.EnablePaste(true)
 	a.folders.SetBorder(true)
 	a.chats.SetBorder(true)
 	a.messages.SetBorder(true)
 	a.composer.SetBorder(true)
+	a.composer.SetPlaceholder(i18n.T(i18n.KeyUIComposePlaceholder))
 	a.statusConn.SetWrap(false)
 	a.statusForeground.SetWrap(false)
 	a.statusBackground.SetWrap(false)
@@ -189,12 +191,12 @@ func (a *App) build() {
 	a.composeStack = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.suggest.panel, 0, 0, false).
 		AddItem(a.suggest.grid, 0, 0, false).
-		AddItem(a.composer, 3, 0, false).
+		AddItem(a.composer, a.composerBoxRows(), 0, false).
 		AddItem(a.suggest.ghost, 1, 0, false)
 
 	a.rightPane = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.messages, 0, 1, false).
-		AddItem(a.composeStack, 4, 0, false).
+		AddItem(a.composeStack, a.composeStackRows(), 0, false).
 		AddItem(a.statusBar, 1, 0, false).
 		AddItem(a.footer, 1, 0, false)
 
@@ -213,26 +215,12 @@ func (a *App) build() {
 		}
 	})
 
-	a.composer.SetDoneFunc(func(key tcell.Key) {
-		if key == tcell.KeyEnter {
-			rawText := a.composer.GetText()
-			text := strings.TrimSpace(rawText)
-			if text != "" {
-				replyToID := 0
-				if a.replyTarget != nil {
-					replyToID, _ = strconv.Atoi(a.replyTarget.ID)
-				}
-				entities := a.takeMentionEntitiesForSend(rawText, text)
-				a.commands <- telegram.Command{Kind: telegram.CommandSendText, PeerKey: a.currentChat, Text: text, ReplyToID: replyToID, MentionEntities: entities}
-				a.setComposerText("")
-				a.closeComposeSuggestions()
-				a.clearReplyTarget()
-				a.setStatusMsg(i18n.KeyStatusSending)
-			}
-			a.updateFocusStyle()
-		}
+	// TextArea has no SetDoneFunc and swallows Enter as a newline, so sending is triggered
+	// from App.capture via composerSendKey.
+	a.composer.SetChangedFunc(func() {
+		a.onComposerChanged(a.composer.GetText())
+		a.syncComposerLayout()
 	})
-	a.composer.SetChangedFunc(a.onComposerChanged)
 
 	a.app.SetRoot(a.root, true)
 	a.app.SetInputCapture(a.capture)
@@ -245,6 +233,12 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		return a.captureSettings(event)
 	}
 	focus := a.app.GetFocus()
+	// Checked before the suggestion panel, which matches bare Enter/Tab with no modifier test
+	// and would otherwise accept a suggestion instead of sending the message.
+	if a.composerHasFocus() && composerSendKey(event) {
+		a.submitComposer()
+		return nil
+	}
 	if a.captureComposeSuggestions(event) {
 		return nil
 	}
@@ -337,7 +331,13 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 
-	if _, typing := focus.(*tview.InputField); typing {
+	// The composer owns every key that reached this far: Enter inserts a newline, the send
+	// keys were handled above, and Tab/Backtab/Esc were handled by the switch. Without this
+	// the global rune switch below would see ordinary typing and 'q' would quit the app.
+	if a.composerHasFocus() {
+		return event
+	}
+	if isTextInputFocus(focus) {
 		return event
 	}
 	if focus == a.msgActionForm {
@@ -1299,11 +1299,9 @@ func copyText(text string) error {
 }
 
 func (a *App) showSearch() {
+	// No composer branch here: capture returns early while a text input has focus, so '/'
+	// never reaches the search key and is typed into the composer directly.
 	focus := a.app.GetFocus()
-	if focus == a.composer {
-		a.composer.SetText(a.composer.GetText() + "/")
-		return
-	}
 	scope := "messages"
 	label := i18n.T(i18n.KeySearchLabelMessages)
 	if focus == a.chats || focus == a.folders {

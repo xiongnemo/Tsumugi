@@ -38,7 +38,7 @@ func TestParseComposeToken(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := parseComposeToken(tt.text); got != tt.want {
+			if got := parseComposeToken(tt.text, len(tt.text)); got != tt.want {
 				t.Fatalf("parseComposeToken(%q) = %+v, want %+v", tt.text, got, tt.want)
 			}
 		})
@@ -57,7 +57,7 @@ func newSuggestionTestApp() *App {
 
 func TestComposeSuggestionNavigationAndAccept(t *testing.T) {
 	app := newSuggestionTestApp()
-	app.composer.SetText("@al")
+	app.composer.SetText("@al", true)
 	app.suggest.mode = composeSuggestMentions
 	app.suggest.token = composeToken{Mode: composeSuggestMentions, Start: 0, End: 3, Query: "al"}
 	app.suggest.items = []composeSuggestItem{
@@ -88,7 +88,7 @@ func TestComposeSuggestionNavigationAndAccept(t *testing.T) {
 
 func TestComposeSuggestionEscKeepsText(t *testing.T) {
 	app := newSuggestionTestApp()
-	app.composer.SetText("@al")
+	app.composer.SetText("@al", true)
 	app.suggest.mode = composeSuggestMentions
 	app.suggest.token = composeToken{Mode: composeSuggestMentions, Start: 0, End: 3, Query: "al"}
 	app.suggest.items = []composeSuggestItem{{Kind: composeSuggestMentions, Main: "Alice", Insert: "@alice"}}
@@ -171,7 +171,7 @@ func TestComposeCommandSuggestionShowsAndAcceptsBotSuffix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			app := newSuggestionTestApp()
-			app.composer.SetText("/pi")
+			app.composer.SetText("/pi", true)
 			app.suggest.mode = composeSuggestCommands
 			app.suggest.token = composeToken{Mode: composeSuggestCommands, Start: 0, End: 3, Query: "pi"}
 			app.suggest.requestID = 7
@@ -215,7 +215,7 @@ func TestComposeCommandSuggestionShowsAndAcceptsBotSuffix(t *testing.T) {
 
 func TestComposeCommandSuggestionFallsBackWithoutBotSuffix(t *testing.T) {
 	app := newSuggestionTestApp()
-	app.composer.SetText("/pi")
+	app.composer.SetText("/pi", true)
 	app.suggest.mode = composeSuggestCommands
 	app.suggest.token = composeToken{Mode: composeSuggestCommands, Start: 0, End: 3, Query: "pi"}
 	app.suggest.requestID = 8

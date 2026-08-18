@@ -136,6 +136,8 @@ const (
 	KeyUIFooterQuit           = "ui.footer_quit"
 	KeyUIFooterProxyActive    = "ui.footer_proxy_active"
 	KeyUIFooterPinned         = "ui.footer_pinned"
+	KeyUIFooterSend           = "ui.footer_send"
+	KeyUIComposePlaceholder   = "ui.compose_placeholder"
 
 	KeyPinnedTitle      = "pinned.title"
 	KeyPinnedTitleShort = "pinned.title_short"

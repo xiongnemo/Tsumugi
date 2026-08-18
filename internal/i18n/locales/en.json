@@ -323,5 +323,7 @@
   "status.loading_pinned": "Loading pinned messages...",
   "pinned.loading": "Loading pinned messages...",
   "status.jumping_to_message": "Jumping to message...",
-  "status.jumped_to_message": "Jumped to message."
+  "status.jumped_to_message": "Jumped to message.",
+  "ui.footer_send": "Ctrl+J send",
+  "ui.compose_placeholder": "Message… (Enter = new line, Ctrl+J = send)"
 }

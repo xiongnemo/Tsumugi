@@ -44,7 +44,10 @@ type composeSuggestState struct {
 	grid  *inlineResultGrid
 	ghost *tview.TextView
 
-	mode        composeSuggestMode
+	mode composeSuggestMode
+	// panelRows is the height the suggestion panel currently occupies, so the composer
+	// layout can be computed instead of hardcoded.
+	panelRows   int
 	token       composeToken
 	requestID   int64
 	highlighted int
@@ -85,23 +88,39 @@ func newComposeSuggestState(theme Theme) *composeSuggestState {
 	return &composeSuggestState{panel: panel, grid: newInlineResultGrid(theme), ghost: ghost}
 }
 
-func parseComposeToken(text string) composeToken {
-	end := len(text)
+// parseComposeToken finds the suggestion token around cursor, a byte offset into text.
+//
+// Offsets in the result are absolute so they can be spliced back into the whole buffer, but
+// the `/command` and `@bot query` forms anchor to the start of the *current line* rather than
+// the start of the text. On a single line those coincide, which is why the pre-multi-line
+// behaviour is preserved exactly; on later lines it is the difference between working and
+// silently never offering a suggestion again.
+func parseComposeToken(text string, cursor int) composeToken {
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(text) {
+		cursor = len(text)
+	}
+	end := cursor
 	if end == 0 {
 		return composeToken{}
 	}
-	start := lastTokenStart(text)
+	lineStart := strings.LastIndexByte(text[:end], '\n') + 1
+	line := text[lineStart:end]
+	start := lineStart + lastTokenStart(line)
 	token := text[start:end]
-	if strings.HasPrefix(text, "/") && start == 0 && !strings.ContainsAny(text, " \t\r\n") {
-		return composeToken{Mode: composeSuggestCommands, Start: 0, End: end, Query: strings.TrimPrefix(text, "/")}
+	if strings.HasPrefix(line, "/") && start == lineStart && !strings.ContainsAny(line, " \t\r") {
+		return composeToken{Mode: composeSuggestCommands, Start: lineStart, End: end, Query: strings.TrimPrefix(line, "/")}
 	}
-	if strings.HasPrefix(text, "@") {
-		space := strings.IndexFunc(text, unicode.IsSpace)
+	if strings.HasPrefix(line, "@") {
+		space := strings.IndexFunc(line, unicode.IsSpace)
 		if space > 1 {
-			bot := strings.TrimPrefix(text[:space], "@")
+			bot := strings.TrimPrefix(line[:space], "@")
 			if isTelegramUsername(bot) {
-				query := strings.TrimLeftFunc(text[space:], unicode.IsSpace)
-				return composeToken{Mode: composeSuggestInline, Start: space + leadingSpaceBytes(text[space:]), End: end, Query: query, BotUsername: bot}
+				query := strings.TrimLeftFunc(line[space:], unicode.IsSpace)
+				queryStart := lineStart + space + leadingSpaceBytes(line[space:])
+				return composeToken{Mode: composeSuggestInline, Start: queryStart, End: end, Query: query, BotUsername: bot}
 			}
 		}
 	}
@@ -164,7 +183,7 @@ func (a *App) onComposerChanged(text string) {
 	if !a.suggest.internalSet {
 		a.suggest.mentionEntities = nil
 	}
-	tok := parseComposeToken(text)
+	tok := parseComposeToken(text, a.composerCursor())
 	if tok.Mode == composeSuggestNone || a.currentChat == "" || a.currentChat == "welcome" || a.currentChat == "empty" {
 		a.closeComposeSuggestions()
 		return
@@ -353,7 +372,8 @@ func (a *App) renderComposeSuggestions() {
 		a.requestInlineThumbs(results)
 	}
 	if a.composeStack != nil {
-		composeRows := 4
+		// This function owns the panel and grid sizes; syncComposerLayout owns the composer and
+		// the stack total, computed from panelRows rather than a hardcoded constant.
 		if open {
 			if useGrid {
 				a.composeStack.ResizeItem(a.suggest.panel, 0, 0)
@@ -362,17 +382,13 @@ func (a *App) renderComposeSuggestions() {
 				a.composeStack.ResizeItem(a.suggest.grid, 0, 0)
 				a.composeStack.ResizeItem(a.suggest.panel, panelRows, 0)
 			}
-			if a.rightPane != nil {
-				composeRows = panelRows + 4
-				a.rightPane.ResizeItem(a.composeStack, composeRows, 0)
-			}
+			a.suggest.panelRows = panelRows
 		} else {
 			a.composeStack.ResizeItem(a.suggest.panel, 0, 0)
 			a.composeStack.ResizeItem(a.suggest.grid, 0, 0)
-			if a.rightPane != nil {
-				a.rightPane.ResizeItem(a.composeStack, composeRows, 0)
-			}
+			a.suggest.panelRows = 0
 		}
+		a.syncComposerLayout()
 	}
 	if useGrid {
 		a.suggest.panel.Clear()
@@ -463,12 +479,11 @@ func (a *App) closeComposeSuggestions() {
 	a.suggest.grid.SetResults(nil)
 	a.suggest.grid.SetTitle("")
 	a.suggest.ghost.SetText("")
+	a.suggest.panelRows = 0
 	if a.composeStack != nil {
 		a.composeStack.ResizeItem(a.suggest.panel, 0, 0)
 		a.composeStack.ResizeItem(a.suggest.grid, 0, 0)
-	}
-	if a.rightPane != nil {
-		a.rightPane.ResizeItem(a.composeStack, 4, 0)
+		a.syncComposerLayout()
 	}
 }
 
@@ -555,8 +570,10 @@ func (a *App) acceptComposeSuggestion(index int) {
 	if insert == "" {
 		return
 	}
-	newText := text[:start] + insert + text[end:]
-	a.setComposerText(newText)
+	// Splice in place rather than rebuilding the whole buffer: a full SetText would move the
+	// cursor to the end of the text, which is wrong when the completed token is on an earlier
+	// line. Replace leaves the cursor right after the insert.
+	a.replaceComposerRange(start, end, insert)
 	if item.Kind == composeSuggestMentions && item.Mention.Username == "" {
 		a.suggest.mentionEntities = append(a.suggest.mentionEntities, telegram.MessageEntityMentionName{
 			Offset:     utf16Len(text[:start]),
@@ -566,14 +583,6 @@ func (a *App) acceptComposeSuggestion(index int) {
 		})
 	}
 	a.closeComposeSuggestions()
-}
-
-func (a *App) setComposerText(text string) {
-	if a.suggest != nil {
-		a.suggest.internalSet = true
-		defer func() { a.suggest.internalSet = false }()
-	}
-	a.composer.SetText(text)
 }
 
 func (a *App) takeMentionEntitiesForSend(rawText, sendText string) []telegram.MessageEntityMentionName {
