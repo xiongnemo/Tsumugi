@@ -29,16 +29,19 @@ type Peer struct {
 	// LastPreviewKey is an i18n key when the preview is generated text (a media
 	// placeholder, an empty-message marker, or a service message). It is empty when
 	// LastPreview holds user-authored message text, which is never translated.
-	LastPreviewKey     string
-	LastPreviewArg     string
-	LastMessageAt      time.Time
-	TopMessageID       int
-	FolderID           int
-	FolderTitle        string
-	Pinned             bool
-	PinnedOrder        int
-	Unread             int
-	ReadOutboxMaxID    int
+	LastPreviewKey  string
+	LastPreviewArg  string
+	LastMessageAt   time.Time
+	TopMessageID    int
+	FolderID        int
+	FolderTitle     string
+	Pinned          bool
+	PinnedOrder     int
+	Unread          int
+	ReadOutboxMaxID int
+	// ReadInboxMaxID is the highest incoming message we have read. The first unread message
+	// is the next one after it, which is what the jump-on-open anchors to.
+	ReadInboxMaxID     int
 	HistoryMinID       int
 	HistoryLoadedUntil time.Time
 	ThumbCacheKey      string

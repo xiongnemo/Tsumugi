@@ -18,6 +18,7 @@ func storedPeer() storage.Peer {
 		PinnedOrder:     2,
 		Unread:          5,
 		ReadOutboxMaxID: 100,
+		ReadInboxMaxID:  90,
 		FolderID:        1,
 		FolderTitle:     "Archive",
 		HistoryMinID:    42,
@@ -34,6 +35,7 @@ func TestMergeDialogPeerTakesServerReadState(t *testing.T) {
 		Title:           "Nemo group",
 		Unread:          0,
 		ReadOutboxMaxID: 200,
+		ReadInboxMaxID:  190,
 		LastMessageAt:   time.Unix(1700000000, 0).UTC(),
 	}
 
@@ -43,6 +45,29 @@ func TestMergeDialogPeerTakesServerReadState(t *testing.T) {
 	}
 	if got.ReadOutboxMaxID != 200 {
 		t.Fatalf("ReadOutboxMaxID = %d, want 200 from the dialog", got.ReadOutboxMaxID)
+	}
+	if got.ReadInboxMaxID != 190 {
+		t.Fatalf("ReadInboxMaxID = %d, want 190 from the dialog", got.ReadInboxMaxID)
+	}
+}
+
+// A local mark-read runs ahead of the server. A dialog sync that has not caught up yet must not
+// drag the read pointer back, or the next chat open jumps to messages already read.
+func TestMergeDialogPeerNeverWalksReadInboxBackwards(t *testing.T) {
+	existing := storedPeer()
+	existing.ReadInboxMaxID = 300
+
+	got := mergeDialogPeer(existing, storage.Peer{
+		AccountID:      "user:1",
+		Key:            "chat:3",
+		Kind:           "chat",
+		ID:             3,
+		Title:          "Nemo group",
+		ReadInboxMaxID: 190,
+	})
+
+	if got.ReadInboxMaxID != 300 {
+		t.Fatalf("ReadInboxMaxID = %d, want the local 300 kept", got.ReadInboxMaxID)
 	}
 }
 
@@ -65,6 +90,9 @@ func TestMergePeerActivityKeepsStoredReadState(t *testing.T) {
 	if got.ReadOutboxMaxID != 100 {
 		t.Fatalf("ReadOutboxMaxID = %d, want the stored 100", got.ReadOutboxMaxID)
 	}
+	if got.ReadInboxMaxID != 90 {
+		t.Fatalf("ReadInboxMaxID = %d, want the stored 90", got.ReadInboxMaxID)
+	}
 }
 
 // Read state is the only intended difference. Pinned ordering and folder placement in
@@ -85,6 +113,7 @@ func TestMergeDialogPeerDiffersOnlyInReadState(t *testing.T) {
 	// Normalise the one intended difference, then everything else must match.
 	viaActivity.Unread = viaDialog.Unread
 	viaActivity.ReadOutboxMaxID = viaDialog.ReadOutboxMaxID
+	viaActivity.ReadInboxMaxID = viaDialog.ReadInboxMaxID
 	if viaActivity != viaDialog {
 		t.Fatalf("merge results differ beyond read state:\nactivity = %+v\ndialog   = %+v", viaActivity, viaDialog)
 	}

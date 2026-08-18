@@ -200,6 +200,7 @@ func (db *DB) migrate(ctx context.Context) error {
 		{"peers", "thumb_cache_key", "TEXT NOT NULL DEFAULT ''"},
 		{"peers", "last_preview_key", "TEXT NOT NULL DEFAULT ''"},
 		{"peers", "last_preview_arg", "TEXT NOT NULL DEFAULT ''"},
+		{"peers", "read_inbox_max_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"messages", "sender_kind", "TEXT NOT NULL DEFAULT ''"},
 		{"messages", "sender_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"messages", "sender_name", "TEXT NOT NULL DEFAULT ''"},
@@ -297,9 +298,9 @@ func (db *DB) SavePeers(ctx context.Context, peers []Peer) error {
 				account_id, key, kind, telegram_id, access_hash, title, username, subtitle, contact, last_preview,
 				last_message_at, top_message_id, folder_id, folder_title, pinned, pinned_order, unread,
 				read_outbox_max_id, history_min_id, history_loaded_until, thumb_cache_key, updated_at,
-				last_preview_key, last_preview_arg
+				last_preview_key, last_preview_arg, read_inbox_max_id
 			)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(account_id, key) DO UPDATE SET
 				kind = excluded.kind,
 				telegram_id = excluded.telegram_id,
@@ -321,6 +322,7 @@ func (db *DB) SavePeers(ctx context.Context, peers []Peer) error {
 				pinned_order = excluded.pinned_order,
 				unread = excluded.unread,
 				read_outbox_max_id = CASE WHEN excluded.read_outbox_max_id > peers.read_outbox_max_id THEN excluded.read_outbox_max_id ELSE peers.read_outbox_max_id END,
+				read_inbox_max_id = CASE WHEN excluded.read_inbox_max_id > peers.read_inbox_max_id THEN excluded.read_inbox_max_id ELSE peers.read_inbox_max_id END,
 				history_min_id = CASE WHEN excluded.history_min_id != 0 THEN excluded.history_min_id ELSE peers.history_min_id END,
 				history_loaded_until = CASE WHEN excluded.history_loaded_until != '' THEN excluded.history_loaded_until ELSE peers.history_loaded_until END,
 				thumb_cache_key = excluded.thumb_cache_key,
@@ -330,7 +332,7 @@ func (db *DB) SavePeers(ctx context.Context, peers []Peer) error {
 		`, peer.AccountID, peer.Key, peer.Kind, peer.ID, peer.AccessHash, peer.Title, peer.Username, peer.Subtitle, boolInt(peer.Contact), peer.LastPreview,
 			nullableTime(peer.LastMessageAt), peer.TopMessageID, peer.FolderID, peer.FolderTitle, boolInt(peer.Pinned), peer.PinnedOrder, peer.Unread,
 			peer.ReadOutboxMaxID, peer.HistoryMinID, nullableTime(peer.HistoryLoadedUntil), peer.ThumbCacheKey, formatTime(peer.UpdatedAt),
-			peer.LastPreviewKey, peer.LastPreviewArg); err != nil {
+			peer.LastPreviewKey, peer.LastPreviewArg, peer.ReadInboxMaxID); err != nil {
 			return err
 		}
 	}
@@ -341,7 +343,7 @@ func (db *DB) ListPeers(ctx context.Context, accountID string) ([]Peer, error) {
 	rows, err := db.sql.QueryContext(ctx, `
 		SELECT key, kind, telegram_id, access_hash, title, username, subtitle, contact, last_preview, last_message_at,
 			top_message_id, folder_id, folder_title, pinned, pinned_order, unread, read_outbox_max_id, history_min_id,
-			history_loaded_until, thumb_cache_key, updated_at, last_preview_key, last_preview_arg
+			history_loaded_until, thumb_cache_key, updated_at, last_preview_key, last_preview_arg, read_inbox_max_id
 		FROM peers WHERE account_id = ?
 		ORDER BY pinned DESC, pinned_order ASC, last_message_at DESC, top_message_id DESC, title COLLATE NOCASE
 	`, accountID)
@@ -358,7 +360,7 @@ func (db *DB) ListPeers(ctx context.Context, accountID string) ([]Peer, error) {
 		p.AccountID = accountID
 		if err := rows.Scan(&p.Key, &p.Kind, &p.ID, &p.AccessHash, &p.Title, &p.Username, &p.Subtitle, &contact, &p.LastPreview, &lastMessageAt,
 			&p.TopMessageID, &p.FolderID, &p.FolderTitle, &pinned, &p.PinnedOrder, &p.Unread, &p.ReadOutboxMaxID, &p.HistoryMinID,
-			&historyLoadedUntil, &p.ThumbCacheKey, &updated, &p.LastPreviewKey, &p.LastPreviewArg); err != nil {
+			&historyLoadedUntil, &p.ThumbCacheKey, &updated, &p.LastPreviewKey, &p.LastPreviewArg, &p.ReadInboxMaxID); err != nil {
 			return nil, err
 		}
 		p.Pinned = pinned != 0
@@ -378,11 +380,11 @@ func (db *DB) Peer(ctx context.Context, accountID, key string) (Peer, bool, erro
 	err := db.sql.QueryRowContext(ctx, `
 		SELECT kind, telegram_id, access_hash, title, username, subtitle, contact, last_preview, last_message_at,
 			top_message_id, folder_id, folder_title, pinned, pinned_order, unread, read_outbox_max_id, history_min_id,
-			history_loaded_until, thumb_cache_key, updated_at, last_preview_key, last_preview_arg
+			history_loaded_until, thumb_cache_key, updated_at, last_preview_key, last_preview_arg, read_inbox_max_id
 		FROM peers WHERE account_id = ? AND key = ?
 	`, accountID, key).Scan(&p.Kind, &p.ID, &p.AccessHash, &p.Title, &p.Username, &p.Subtitle, &contact, &p.LastPreview, &lastMessageAt,
 		&p.TopMessageID, &p.FolderID, &p.FolderTitle, &pinned, &p.PinnedOrder, &p.Unread, &p.ReadOutboxMaxID, &p.HistoryMinID,
-		&historyLoadedUntil, &p.ThumbCacheKey, &updated, &p.LastPreviewKey, &p.LastPreviewArg)
+		&historyLoadedUntil, &p.ThumbCacheKey, &updated, &p.LastPreviewKey, &p.LastPreviewArg, &p.ReadInboxMaxID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Peer{}, false, nil
 	}
@@ -656,6 +658,64 @@ func (db *DB) UpdatePeerReadOutboxMaxID(ctx context.Context, accountID, peerKey 
 		WHERE account_id = ? AND key = ?
 	`, maxID, maxID, formatTime(time.Now().UTC()), accountID, peerKey)
 	return err
+}
+
+// UpdatePeerReadInbox advances the read-inbox watermark and replaces the unread count.
+//
+// The watermark is monotonic like read_outbox_max_id, because reads only ever move forward and
+// updates can arrive out of order. The unread count is not: StillUnreadCount from the server is
+// authoritative and legitimately goes both up and down. Pass unread < 0 to leave it alone.
+func (db *DB) UpdatePeerReadInbox(ctx context.Context, accountID, peerKey string, maxID, unread int) error {
+	if maxID <= 0 && unread < 0 {
+		return nil
+	}
+	if unread < 0 {
+		_, err := db.sql.ExecContext(ctx, `
+			UPDATE peers SET read_inbox_max_id = CASE WHEN read_inbox_max_id > ? THEN read_inbox_max_id ELSE ? END,
+				updated_at = ?
+			WHERE account_id = ? AND key = ?
+		`, maxID, maxID, formatTime(time.Now().UTC()), accountID, peerKey)
+		return err
+	}
+	_, err := db.sql.ExecContext(ctx, `
+		UPDATE peers SET read_inbox_max_id = CASE WHEN read_inbox_max_id > ? THEN read_inbox_max_id ELSE ? END,
+			unread = ?, updated_at = ?
+		WHERE account_id = ? AND key = ?
+	`, maxID, maxID, unread, formatTime(time.Now().UTC()), accountID, peerKey)
+	return err
+}
+
+// PeerKeyForTelegramID resolves a stored peer key from a Telegram id, restricted to the given
+// kinds.
+//
+// Needed because a read update for Saved Messages arrives as a PeerUser while the row is stored
+// as self:<id>, so building the key from the update's type alone would miss it. The kinds must
+// be passed explicitly rather than searched across all of them: Telegram ids are only unique
+// within a peer type, so a user and a chat can share one.
+func (db *DB) PeerKeyForTelegramID(ctx context.Context, accountID string, telegramID int64, kinds ...string) (string, bool, error) {
+	if len(kinds) == 0 {
+		return "", false, nil
+	}
+	args := []any{accountID, telegramID}
+	placeholders := make([]string, len(kinds))
+	for i, kind := range kinds {
+		placeholders[i] = "?"
+		args = append(args, kind)
+	}
+	var key string
+	err := db.sql.QueryRowContext(ctx, `
+		SELECT key FROM peers
+		WHERE account_id = ? AND telegram_id = ? AND kind IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY kind
+		LIMIT 1
+	`, args...).Scan(&key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return key, true, nil
 }
 
 func (db *DB) ClearGlobalPins(ctx context.Context, accountID string) error {

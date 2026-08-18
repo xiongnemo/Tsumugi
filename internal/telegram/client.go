@@ -815,15 +815,26 @@ func (c *GotdClient) registerUpdateHandlers(dispatcher *tg.UpdateDispatcher, acc
 		return nil
 	})
 	dispatcher.OnReadHistoryInbox(func(ctx context.Context, _ tg.Entities, update *tg.UpdateReadHistoryInbox) error {
-		if accountID != nil {
-			c.saveUpdateState(ctx, events, storage.UpdateState{AccountID: *accountID, Pts: update.Pts})
+		if accountID == nil || *accountID == "" || c.store == nil {
+			return nil
 		}
+		if topMsgID, ok := update.GetTopMsgID(); ok && topMsgID != 0 {
+			// Forum topic read state is a separate space; deferred.
+			c.saveUpdateState(ctx, events, storage.UpdateState{AccountID: *accountID, Pts: update.Pts})
+			return nil
+		}
+		if key, ok := c.inboxPeerKey(ctx, *accountID, update.Peer); ok {
+			c.applyReadInbox(ctx, *accountID, events, key, update.MaxID, update.StillUnreadCount)
+		}
+		c.saveUpdateState(ctx, events, storage.UpdateState{AccountID: *accountID, Pts: update.Pts})
 		return nil
 	})
 	dispatcher.OnReadChannelInbox(func(ctx context.Context, _ tg.Entities, update *tg.UpdateReadChannelInbox) error {
-		if accountID != nil {
-			c.saveUpdateState(ctx, events, storage.UpdateState{AccountID: *accountID, Pts: update.Pts})
+		if accountID == nil || *accountID == "" || c.store == nil {
+			return nil
 		}
+		c.applyReadInbox(ctx, *accountID, events, peerKey("channel", update.ChannelID), update.MaxID, update.StillUnreadCount)
+		c.saveUpdateState(ctx, events, storage.UpdateState{AccountID: *accountID, Pts: update.Pts})
 		return nil
 	})
 	dispatcher.OnReadHistoryOutbox(func(ctx context.Context, _ tg.Entities, update *tg.UpdateReadHistoryOutbox) error {
@@ -996,6 +1007,7 @@ func normalizeDialog(accountID string, item tg.DialogClass, messageByID map[int]
 	p.TopMessageID = d.TopMessage
 	p.Unread = d.UnreadCount
 	p.ReadOutboxMaxID = d.ReadOutboxMaxID
+	p.ReadInboxMaxID = d.ReadInboxMaxID
 	p.Pinned = d.Pinned
 	if p.Pinned {
 		p.PinnedOrder = index + 1
@@ -1276,6 +1288,10 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				go c.saveDraft(ctx, accountID, api, events, command)
 			case CommandSetTyping:
 				go c.setTyping(ctx, accountID, api, command.PeerKey, command.Typing)
+			case CommandMarkRead:
+				// Must be `go`: a synchronous read mark would stall the command loop on
+				// every scroll.
+				go c.markRead(ctx, accountID, api, events, command)
 			}
 		}
 	}
@@ -2422,6 +2438,7 @@ func mergePeerActivity(existing, activity storage.Peer) storage.Peer {
 	out.PinnedOrder = existing.PinnedOrder
 	out.Unread = existing.Unread
 	out.ReadOutboxMaxID = existing.ReadOutboxMaxID
+	out.ReadInboxMaxID = existing.ReadInboxMaxID
 	if out.FolderID == 0 {
 		out.FolderID = existing.FolderID
 		out.FolderTitle = existing.FolderTitle
@@ -2452,6 +2469,11 @@ func mergeDialogPeer(existing, dialog storage.Peer) storage.Peer {
 	out := mergePeerActivity(existing, dialog)
 	out.Unread = dialog.Unread
 	out.ReadOutboxMaxID = dialog.ReadOutboxMaxID
+	// Never let a dialog sync walk the read pointer backwards. SavePeers guards this too, but
+	// callers also compare the merged value against the stored one to decide whether to jump.
+	if dialog.ReadInboxMaxID > existing.ReadInboxMaxID {
+		out.ReadInboxMaxID = dialog.ReadInboxMaxID
+	}
 	return out
 }
 

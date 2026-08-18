@@ -26,6 +26,7 @@ const (
 	EventInlineResultThumb       EventKind = "inline_result_thumb"
 	EventDraft                   EventKind = "draft"
 	EventTyping                  EventKind = "typing"
+	EventReadInbox               EventKind = "read_inbox"
 )
 
 type Event struct {
@@ -73,6 +74,10 @@ type Event struct {
 	TypingName      string
 	TypingActionKey string
 	TypingActive    bool
+	// Inbox read state for one peer. Unread is the stored count after the read was applied,
+	// so it is always truthful rather than a delta the UI would have to reconcile.
+	ReadInboxMaxID int
+	Unread         int
 }
 
 // BackgroundKind identifies low-priority work shown in the status bar right column.
@@ -185,6 +190,7 @@ const (
 	CommandFetchInlineThumb CommandKind = "fetch_inline_thumb"
 	CommandSaveDraft        CommandKind = "save_draft"
 	CommandSetTyping        CommandKind = "set_typing"
+	CommandMarkRead         CommandKind = "mark_read"
 )
 
 type Command struct {

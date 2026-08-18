@@ -96,6 +96,9 @@ type App struct {
 	typingExpiry       *time.Timer
 	typingNotifiedPeer string
 	typingNotifiedAt   time.Time
+	// readInboxMaxID is the highest read incoming message per peer, mirrored from the client so
+	// the unread divider and the jump target can be computed without a round trip.
+	readInboxMaxID map[string]int
 }
 
 func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
@@ -587,6 +590,8 @@ func (a *App) applyEvent(event telegram.Event) {
 		a.applyDraftEvent(event)
 	case telegram.EventTyping:
 		a.applyTypingEvent(event)
+	case telegram.EventReadInbox:
+		a.applyReadInboxEvent(event)
 	case telegram.EventReadOutbox:
 		if event.PeerKey == a.currentChat && strings.HasPrefix(event.PeerKey, "user:") {
 			a.messages.ApplyReadOutboxMaxID(event.ReadOutboxMaxID, true)
