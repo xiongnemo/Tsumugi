@@ -79,6 +79,42 @@ When raw `tcell` drawing may display CJK or other wide Unicode text, use
 display-width-aware helpers such as `uniseg.StringWidth` rather than byte
 length or rune count.
 
+### Raw Terminal Support
+
+Tsumugi must remain usable on a **raw Linux text-mode console** — a bare
+screenbuffer TTY with no terminal emulator, as reached with `Ctrl+Alt+F3` or by
+booting to multi-user target. This is a product goal, not a nice-to-have, and it
+constrains new TUI work in four specific ways.
+
+**No enhanced keyboard protocols.** `tcell` auto-enables `modifyOtherKeys`,
+kitty CSI-u, and win32-input-mode, so modifier+key combinations that work in
+Windows Terminal do not necessarily arrive at all on a Linux VT, which speaks
+none of them. A shortcut whose only binding needs a modifier that the VT cannot
+encode is effectively missing there. Prefer a plain key or a control character
+(`Ctrl+J` is `0x0A` and always arrives); accept modifier variants as aliases.
+
+**No mouse.** Every overlay and grid must be fully keyboard-reachable. A mouse
+handler is an addition to key bindings, never a replacement.
+
+**No emoji and no CJK glyphs.** The console font holds roughly 256–512 glyphs.
+Message *content* in those scripts will render as tofu and that cannot be fixed
+in-app — but our own chrome can be. Any glyph used as **semantics** rather than
+decoration (pin markers, view counts, read receipts, selection marks, typing
+indicators) must go through `internal/ui/glyphs.go`, which has an ASCII
+fallback. Half-block glyphs (`▀▄█`) *are* in the standard console font, which is
+what keeps image previews and the login QR code working.
+
+**80x25 and about 16 colors.** Previews emit 24-bit ANSI and `tcell`
+downsamples, which is rougher but correct; named tags map fine. Do not assume
+truecolor in new UI. For layout, the folder rail collapses below a width
+threshold — see `narrowLayout` — so new panes must degrade rather than assume
+the full 50 columns of chrome that folders plus the chat list normally take.
+
+Verification on a Windows dev box is partial: `TERM=linux` in a small window
+approximates the color and size behaviour but not glyph coverage.
+`TSUMUGI_ASCII=1` forces the ASCII glyph set for testing. A real check needs a
+Linux VT or `qemu -nographic`, and is a manual step.
+
 ## Single-File Builds And Packaging
 
 The default release target is one executable. Sidecar files are allowed only

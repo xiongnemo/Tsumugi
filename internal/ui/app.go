@@ -128,6 +128,9 @@ type App struct {
 	qrView    *tview.TextView
 	qrURLView *tview.TextView
 	qrPrompt  *telegram.AuthPrompt
+	// Narrow-terminal layout state; see narrow_layout.go.
+	layoutTier        layoutTier
+	layoutTierApplied bool
 }
 
 func New(cfg config.Config, db *storage.DB, events <-chan telegram.Event, commands chan<- telegram.Command, control chan<- ControlEvent) *App {
@@ -245,8 +248,8 @@ func (a *App) build() {
 		AddItem(a.footer, 1, 0, false)
 
 	a.root = tview.NewFlex().
-		AddItem(a.folders, 16, 0, false).
-		AddItem(a.chats, 34, 0, true).
+		AddItem(a.folders, folderRailWidth, 0, false).
+		AddItem(a.chats, chatRailWidth, 0, true).
 		AddItem(a.rightPane, 0, 1, false)
 
 	a.chats.SetChangedFunc(func(index int, _, _ string, _ rune) {
@@ -272,8 +275,12 @@ func (a *App) build() {
 	a.app.SetInputCapture(a.capture)
 	// The composer's scroll has to be corrected after the editor's own cursor handling has
 	// run, which the changed callback is too early for; see clampComposerScroll.
-	a.app.SetBeforeDrawFunc(func(tcell.Screen) bool {
+	a.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
 		a.clampComposerScroll()
+		// tview exposes no resize hook, and the draw pass is where a new width first becomes
+		// visible. applyLayoutTier is idempotent, so this costs a comparison per frame.
+		width, _ := screen.Size()
+		a.applyLayoutTier(width)
 		return false
 	})
 	a.updateFocusStyle()

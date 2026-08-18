@@ -281,6 +281,30 @@ read-only `Environment` entry, for example
 `Environment: ALL_PROXY -> SOCKS5 127.0.0.1:11085`. Credentials are masked in
 UI labels. Editable profiles are stored in the local SQLite database.
 
+## Raw Linux console
+
+Tsumugi is meant to be usable on a bare Linux text-mode console (`Ctrl+Alt+F3`,
+no terminal emulator), not just inside one. What that costs and what Tsumugi does
+about it:
+
+- **Keys.** `Ctrl+J` sends, because it is a control character every terminal can
+  emit. `Ctrl+Enter` and `Alt+Enter` are aliases that only work where the
+  terminal can encode them.
+- **No mouse.** Every overlay and the inline result grid are fully
+  keyboard-reachable.
+- **Glyphs.** The console font has no emoji and no CJK, so message text in those
+  scripts renders as blanks — that cannot be fixed from inside the program.
+  Tsumugi's own markers (pins, view counts, read receipts, selection marks) fall
+  back to ASCII automatically on `TERM=linux` or in a non-UTF-8 locale. Force it
+  anywhere with `TSUMUGI_ASCII=1`. Half-block glyphs are in the standard console
+  font, so image previews and the login QR code still work.
+- **80x25.** Below roughly 90 columns the folder rail is hidden (still reachable
+  with `Tab`), and below about 70 the chat list narrows too, so the message pane
+  keeps at least 40 columns. The inline result grid drops to one thumbnail per
+  row.
+- **~16 colors.** Previews emit 24-bit ANSI and `tcell` downsamples; output is
+  rougher but correct.
+
 ## Keybindings
 
 - `Tab`: switch focus between folders, chat list, message view, and composer

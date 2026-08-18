@@ -5,6 +5,7 @@ import (
 
 	"github.com/rivo/tview"
 
+	"github.com/nemo/Tsumugi/internal/render"
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
 
@@ -113,7 +114,7 @@ func TestSetMessagesDoesNotClearMarksForVisibleMessages(t *testing.T) {
 }
 
 func TestGutterMarkerEncodesBothStates(t *testing.T) {
-	mark := glyphs().Marked
+	mark := render.Glyphs().Marked
 	cases := []struct {
 		selected, marked bool
 		want             string
@@ -124,14 +125,14 @@ func TestGutterMarkerEncodesBothStates(t *testing.T) {
 		{true, true, ">" + mark},
 	}
 	for _, tc := range cases {
-		if got := gutterMarker(tc.selected, tc.marked); got != tc.want {
-			t.Errorf("gutterMarker(%v, %v) = %q, want %q", tc.selected, tc.marked, got, tc.want)
+		if got := render.GutterMarker(tc.selected, tc.marked); got != tc.want {
+			t.Errorf("render.GutterMarker(%v, %v) = %q, want %q", tc.selected, tc.marked, got, tc.want)
 		}
 	}
 	// The gutter is exactly two cells wide; a wider marker would shift every message's content.
 	for _, tc := range cases {
-		if n := len([]rune(gutterMarker(tc.selected, tc.marked))); n != 2 {
-			t.Errorf("gutterMarker(%v, %v) is %d cells, want 2", tc.selected, tc.marked, n)
+		if n := len([]rune(render.GutterMarker(tc.selected, tc.marked))); n != 2 {
+			t.Errorf("render.GutterMarker(%v, %v) is %d cells, want 2", tc.selected, tc.marked, n)
 		}
 	}
 }

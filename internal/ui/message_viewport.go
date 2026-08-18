@@ -668,7 +668,7 @@ func (v *MessageViewport) Draw(screen tcell.Screen) {
 	msgY := y + bannerLines
 	msgHeight := v.messageAreaHeight(height)
 	if bannerLines > 0 {
-		line := render.Truncate("📌 "+v.pinnedBanner, width)
+		line := render.Truncate(render.Glyphs().Pinned+" "+v.pinnedBanner, width)
 		tview.Print(screen, line, x, y, width, tview.AlignLeft, tcell.ColorYellow)
 	}
 	if len(v.messages) == 0 {
@@ -705,7 +705,7 @@ func (v *MessageViewport) Draw(screen tcell.Screen) {
 			selected := blockIndex == v.selected
 			// Both states share the existing 2-cell gutter. Widening it would force a full
 			// relayout and shift contentWidth for every message.
-			cursor := gutterMarker(selected, v.isMarked(block.id))
+			cursor := render.GutterMarker(selected, v.isMarked(block.id))
 			lineText := line
 			pad := 0
 			if block.alignRight {

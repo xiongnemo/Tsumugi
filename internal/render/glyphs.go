@@ -1,4 +1,4 @@
-package ui
+package render
 
 import (
 	"os"
@@ -12,7 +12,7 @@ import (
 // terminal, but our own chrome can, so every glyph that carries meaning goes through here and has
 // an ASCII fallback. Half-block glyphs are excluded on purpose — they are in the standard console
 // font, which is what keeps image previews and the login QR working there.
-type glyphSet struct {
+type GlyphSet struct {
 	Marked   string
 	Pinned   string
 	Views    string
@@ -21,7 +21,7 @@ type glyphSet struct {
 	ReadBoth string
 }
 
-var unicodeGlyphs = glyphSet{
+var unicodeGlyphs = GlyphSet{
 	Marked:   "✓",
 	Pinned:   "📌",
 	Views:    "👁",
@@ -30,7 +30,7 @@ var unicodeGlyphs = glyphSet{
 	ReadBoth: "✓✓",
 }
 
-var asciiGlyphs = glyphSet{
+var asciiGlyphs = GlyphSet{
 	Marked:   "*",
 	Pinned:   "!",
 	Views:    "v",
@@ -41,10 +41,10 @@ var asciiGlyphs = glyphSet{
 
 // glyphsCache is resolved once: the terminal cannot change identity mid-run, and Draw calls this
 // per visible line.
-var glyphsCache *glyphSet
+var glyphsCache *GlyphSet
 
-// glyphs reports the glyph set the current terminal can actually render.
-func glyphs() glyphSet {
+// Glyphs reports the glyph set the current terminal can actually render.
+func Glyphs() GlyphSet {
 	if glyphsCache == nil {
 		set := unicodeGlyphs
 		if asciiOnlyTerminal() {
@@ -63,7 +63,10 @@ func glyphs() glyphSet {
 // regardless of the font. TSUMUGI_ASCII forces it either way, because no probe is reliable
 // enough to be the only answer.
 func asciiOnlyTerminal() bool {
-	if forced, ok := os.LookupEnv("TSUMUGI_ASCII"); ok {
+	// Compared after trimming and only when non-empty: LookupEnv reports ok for an empty value,
+	// so an unset-but-present variable would otherwise short-circuit the probes below and force
+	// Unicode on a terminal that cannot render it.
+	if forced := strings.TrimSpace(os.Getenv("TSUMUGI_ASCII")); forced != "" {
 		return forced == "1" || strings.EqualFold(forced, "true")
 	}
 	term := os.Getenv("TERM")
@@ -82,18 +85,23 @@ func asciiOnlyTerminal() bool {
 	return false
 }
 
-// gutterMarker encodes cursor and mark state into the message pane's 2-cell gutter.
+// GutterMarker encodes cursor and mark state into the message pane's 2-cell gutter.
 //
 // Both fit because the mark only ever needs one cell: "> " cursor, "✓ " marked, ">✓" both.
-func gutterMarker(selected, marked bool) string {
+func GutterMarker(selected, marked bool) string {
 	switch {
 	case selected && marked:
-		return ">" + glyphs().Marked
+		return ">" + Glyphs().Marked
 	case selected:
 		return "> "
 	case marked:
-		return glyphs().Marked + " "
+		return Glyphs().Marked + " "
 	default:
 		return "  "
 	}
+}
+
+// ResetGlyphsForTest clears the resolved glyph cache so a test can change the environment.
+func ResetGlyphsForTest() {
+	glyphsCache = nil
 }

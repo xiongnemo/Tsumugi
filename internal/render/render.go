@@ -53,7 +53,7 @@ func ChatRow(chat telegram.Chat, width int) string {
 		title = i18n.T(i18n.KeyUIUntitled)
 	}
 	if chat.Pinned {
-		title = "📌 " + title
+		title = Glyphs().Pinned + " " + title
 	}
 	if chat.Unread > 0 {
 		title = fmt.Sprintf("%s (%d)", title, chat.Unread)
@@ -293,7 +293,7 @@ func channelViewsMeta(views int) string {
 	if count == "" {
 		return ""
 	}
-	return fmt.Sprintf(" [gray]👁 %s[-]", count)
+	return fmt.Sprintf(" [gray]%s %s[-]", Glyphs().Views, count)
 }
 
 func groupReadMeta(message telegram.Message) string {
@@ -385,9 +385,9 @@ func outboxReadMeta(message telegram.Message) string {
 		return ""
 	}
 	if message.ReadByPeer {
-		return " [green]✓✓"
+		return " [green]" + Glyphs().ReadBoth
 	}
-	return " ✓"
+	return " " + Glyphs().ReadOne
 }
 
 // MessageDetail is a non-truncated, word-wrap-friendly body for modals (no fixed width).
