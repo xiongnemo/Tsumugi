@@ -7,6 +7,18 @@ import (
 	"github.com/nemo/Tsumugi/internal/storage"
 )
 
+// forwardLookup mimics the storage lookup the real path uses.
+func forwardLookup(messages []storage.Message) func(int) (storage.Message, bool) {
+	byID := make(map[int]storage.Message, len(messages))
+	for _, msg := range messages {
+		byID[msg.ID] = msg
+	}
+	return func(id int) (storage.Message, bool) {
+		msg, ok := byID[id]
+		return msg, ok
+	}
+}
+
 func forwardStored() []storage.Message {
 	return []storage.Message{
 		{ID: 10, State: "synced"},
@@ -20,7 +32,7 @@ func forwardStored() []storage.Message {
 }
 
 func TestSanitizeForwardIDsDropsWhatCannotBeForwarded(t *testing.T) {
-	got, err := sanitizeForwardIDs(forwardStored(), []string{"10", "12", "13", "14", "15", "16"})
+	got, err := sanitizeForwardIDs(forwardLookup(forwardStored()), []string{"10", "12", "13", "14", "15", "16"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +50,7 @@ func TestSanitizeForwardIDsDropsWhatCannotBeForwarded(t *testing.T) {
 // Telegram forwards in the order given, so the copy should read the same way as the source
 // regardless of the order the user marked things in.
 func TestSanitizeForwardIDsSortsAscending(t *testing.T) {
-	got, err := sanitizeForwardIDs(forwardStored(), []string{"16", "10", "11"})
+	got, err := sanitizeForwardIDs(forwardLookup(forwardStored()), []string{"16", "10", "11"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,13 +61,26 @@ func TestSanitizeForwardIDsSortsAscending(t *testing.T) {
 	}
 }
 
-func TestSanitizeForwardIDsIgnoresUnknownAndDuplicates(t *testing.T) {
-	got, err := sanitizeForwardIDs(forwardStored(), []string{"10", "10", "999", "local-1", ""})
+func TestSanitizeForwardIDsIgnoresDuplicatesAndLocalIDs(t *testing.T) {
+	got, err := sanitizeForwardIDs(forwardLookup(forwardStored()), []string{"10", "10", "local-1", ""})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0] != 10 {
 		t.Fatalf("ids = %v, want just [10]", got)
+	}
+}
+
+// An id the store has not cached is passed through, not dropped. The UI can only mark what it has
+// displayed, so an unknown id means our cache is behind — and dropping it is exactly the silent
+// loss that made selections disappear after a jump.
+func TestSanitizeForwardIDsKeepsUncachedIDs(t *testing.T) {
+	got, err := sanitizeForwardIDs(forwardLookup(forwardStored()), []string{"999999"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != 999999 {
+		t.Fatalf("ids = %v, want the uncached id forwarded anyway", got)
 	}
 }
 
@@ -69,18 +94,18 @@ func TestSanitizeForwardIDsRejectsOverTheAPICap(t *testing.T) {
 		wanted = append(wanted, strconv.Itoa(i))
 	}
 
-	if _, err := sanitizeForwardIDs(stored, wanted); err == nil {
+	if _, err := sanitizeForwardIDs(forwardLookup(stored), wanted); err == nil {
 		t.Fatalf("want an error above the %d-message cap", forwardMaxMessages)
 	}
 
 	// Exactly at the cap must still work.
-	if _, err := sanitizeForwardIDs(stored, wanted[:forwardMaxMessages]); err != nil {
+	if _, err := sanitizeForwardIDs(forwardLookup(stored), wanted[:forwardMaxMessages]); err != nil {
 		t.Fatalf("at the cap: %v", err)
 	}
 }
 
 func TestSanitizeForwardIDsEmpty(t *testing.T) {
-	got, err := sanitizeForwardIDs(forwardStored(), nil)
+	got, err := sanitizeForwardIDs(forwardLookup(forwardStored()), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

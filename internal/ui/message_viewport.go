@@ -36,7 +36,6 @@ type MessageViewport struct {
 	notifiedSelectedID       string
 	unreadDividerID          string
 	marked                   map[string]struct{}
-	markedPruned             int
 	lastOlderFire            time.Time
 	gifTick                  int
 	inlineAnim               bool
@@ -590,6 +589,7 @@ func (v *MessageViewport) RemoveIDs(ids []string) {
 	for _, id := range ids {
 		delete(v.rows, id)
 	}
+	v.dropMarks(ids)
 	v.rebuild(selectedID)
 	if len(v.messages) == 0 {
 		v.selected = -1
@@ -1051,31 +1051,19 @@ func (v *MessageViewport) rebuild(selectedID string) {
 	if v.selected < 0 && len(v.messages) > 0 {
 		v.selected = len(v.messages) - 1
 	}
-	v.pruneMarks()
 }
 
-// pruneMarks drops marked ids that are no longer in the viewport.
+// dropMarks unmarks specific ids, used when messages are genuinely deleted.
 //
-// This is what makes forwarding safe: it is impossible to forward a message you cannot see. A
-// jump replaces the whole window and therefore drops most of a mark set, which the UI has to
-// report — hence the count rather than a bare bool.
-func (v *MessageViewport) pruneMarks() {
-	if len(v.marked) == 0 {
-		return
+// Deliberately NOT called from rebuild. Marks used to be pruned to whatever was currently
+// loaded, which meant paging past the 1000-message cap or jumping anywhere silently discarded a
+// selection — neither of which loses a selection in Telegram Desktop. A mark is a promise about a
+// message, not about the scroll position, so it survives until the user clears it or the message
+// stops existing.
+func (v *MessageViewport) dropMarks(ids []string) {
+	for _, id := range ids {
+		delete(v.marked, id)
 	}
-	for id := range v.marked {
-		if _, ok := v.rows[id]; !ok {
-			delete(v.marked, id)
-			v.markedPruned++
-		}
-	}
-}
-
-// TakeMarkedPruned reports and resets how many marks were dropped since the last call.
-func (v *MessageViewport) TakeMarkedPruned() int {
-	n := v.markedPruned
-	v.markedPruned = 0
-	return n
 }
 
 // ToggleMark marks or unmarks the selected message for a multi-message action.
@@ -1100,18 +1088,20 @@ func (v *MessageViewport) ToggleMark() (marked bool, ok bool) {
 	return true, true
 }
 
-// MarkedIDs returns the marked message ids in viewport (oldest first) order, which is the order
-// Telegram should receive them in.
+// MarkedIDs returns every marked id, oldest first.
+//
+// Sorted by id rather than by walking v.messages: a mark can outlive the loaded window now, and
+// looking marks up in the viewport would drop exactly the ones that scrolled away. Telegram ids
+// increase with time within a peer, so numeric order is chronological order.
 func (v *MessageViewport) MarkedIDs() []string {
 	if len(v.marked) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(v.marked))
-	for _, msg := range v.messages {
-		if _, ok := v.marked[msg.ID]; ok {
-			out = append(out, msg.ID)
-		}
+	for id := range v.marked {
+		out = append(out, id)
 	}
+	sort.SliceStable(out, func(i, j int) bool { return messageIDLess(out[i], out[j]) })
 	return out
 }
 
@@ -1127,7 +1117,6 @@ func (v *MessageViewport) ClearMarks() {
 		return
 	}
 	v.marked = nil
-	v.markedPruned = 0
 	v.invalidateLayout()
 }
 

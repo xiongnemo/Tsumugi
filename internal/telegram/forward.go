@@ -15,10 +15,6 @@ import (
 // forwardMaxMessages is Telegram's per-request cap for messages.forwardMessages.
 const forwardMaxMessages = 100
 
-// forwardLookupWindow is how much recent history is loaded to validate the requested ids. The
-// UI can only mark messages it is displaying, and the viewport holds at most 1000.
-const forwardLookupWindow = 1000
-
 // SavedMessagesTarget is the sentinel peer key for "forward to Saved Messages".
 //
 // A sentinel rather than the real self:<id> key, because the picker offers Saved Messages before
@@ -26,32 +22,48 @@ const forwardLookupWindow = 1000
 // straight to InputPeerSelf, which needs no stored peer at all.
 const SavedMessagesTarget = "__saved__"
 
+// forwardableMessage reports whether a stored message can be forwarded.
+//
+// Local pending sends, failed sends, deleted rows and service messages have no forwardable
+// server-side identity.
+func forwardableMessage(msg storage.Message) bool {
+	switch {
+	case msg.ServiceKey != "":
+		return false
+	case msg.State == "pending", msg.State == "failed", msg.State == "deleted":
+		return false
+	default:
+		return true
+	}
+}
+
 // sanitizeForwardIDs turns the UI's message ids into ids Telegram will accept.
 //
-// Drops everything that has no server-side identity — local pending sends, failed sends, deleted
-// rows and service messages, none of which can be forwarded — and errors above the API cap rather
-// than silently forwarding a prefix. Sorted ascending because Telegram forwards in the order
-// given and the result should read the same way as the source.
-func sanitizeForwardIDs(messages []storage.Message, wanted []string) ([]int, error) {
-	byID := make(map[string]storage.Message, len(messages))
-	for _, msg := range messages {
-		byID[strconv.Itoa(msg.ID)] = msg
-	}
+// lookup answers "what is this message", by id. It is a function rather than a preloaded slice
+// because the alternative — loading recent history and dropping anything not in it — silently
+// discards marks for older messages, which is precisely the limitation that made the UI throw
+// selections away on every jump. A mark is valid because the user made it, not because the
+// message happens to still be in the loaded window.
+//
+// An id the store has never heard of is passed through rather than dropped: the UI can only mark
+// what it has displayed, so an unknown id means our cache is behind, not that the message is
+// invalid, and Telegram is the authority on that.
+//
+// Errors above the API cap rather than silently forwarding a prefix the user cannot identify.
+// Sorted ascending because Telegram forwards in the order given.
+func sanitizeForwardIDs(lookup func(int) (storage.Message, bool), wanted []string) ([]int, error) {
 	seen := make(map[int]struct{}, len(wanted))
 	out := make([]int, 0, len(wanted))
 	for _, raw := range wanted {
-		msg, ok := byID[raw]
-		if !ok {
-			continue
-		}
-		if msg.ServiceKey != "" || msg.State == "pending" || msg.State == "failed" || msg.State == "deleted" {
-			continue
-		}
 		id, err := strconv.Atoi(raw)
 		if err != nil || id <= 0 {
+			// A local pending send has no server id at all.
 			continue
 		}
 		if _, dup := seen[id]; dup {
+			continue
+		}
+		if msg, known := lookup(id); known && !forwardableMessage(msg) {
 			continue
 		}
 		seen[id] = struct{}{}
@@ -87,12 +99,14 @@ func (c *GotdClient) forwardMessages(ctx context.Context, accountID string, api 
 	if c.store == nil || api == nil || cmd.PeerKey == "" || cmd.ForwardTarget == "" {
 		return
 	}
-	stored, err := c.store.MessagesForPeer(ctx, accountID, cmd.PeerKey, forwardLookupWindow)
-	if err != nil {
-		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: cmd.PeerKey, Error: err})
-		return
+	lookup := func(id int) (storage.Message, bool) {
+		msg, ok, err := c.store.MessageByID(ctx, accountID, cmd.PeerKey, id)
+		if err != nil {
+			return storage.Message{}, false
+		}
+		return msg, ok
 	}
-	ids, err := sanitizeForwardIDs(stored, cmd.ForwardIDs)
+	ids, err := sanitizeForwardIDs(lookup, cmd.ForwardIDs)
 	if err != nil {
 		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: cmd.PeerKey, Error: err})
 		return

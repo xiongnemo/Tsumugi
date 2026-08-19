@@ -45,14 +45,16 @@ func (a *App) clearForwardMarks() bool {
 	return true
 }
 
-// reportDroppedMarks tells the user when a viewport replacement pruned marks.
+// markedTitleHint shows how many messages are selected.
 //
-// A jump replaces the whole window and therefore drops most of a mark set. Silently forwarding
-// the survivors would be the wrong answer, so the count is surfaced.
-func (a *App) reportDroppedMarks() {
-	if n := a.messages.TakeMarkedPruned(); n > 0 {
-		a.setStatusMsg(i18n.KeyStatusMarksDropped, n)
+// Persistent rather than a transient status line, because a selection now survives scrolling and
+// jumping: without a standing indicator the user could build a set, navigate away, and forget it
+// was there. Graphical clients show the same thing as a permanent bar while a selection exists.
+func (a *App) markedTitleHint() string {
+	if n := a.messages.MarkedCount(); n > 0 {
+		return i18n.Tf(i18n.KeyStatusMarkedCount, n)
 	}
+	return ""
 }
 
 // openForwardPicker asks where to forward the marked messages.

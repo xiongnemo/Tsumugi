@@ -116,8 +116,9 @@ behaviour you may want to change.
 - Forward messages. **`v`** marks the selected message (a `✓` appears in the gutter),
   **`f`** opens a destination picker, and **`F`** forwards without the original author.
   With nothing marked, `f` forwards the message under the cursor. Saved Messages is the
-  first destination in the list. Marks are dropped when they scroll out of the loaded
-  window, and Tsumugi says how many — you can never forward a message you cannot see.
+  first destination in the list. A selection survives scrolling, paging and jumping, the
+  way it does in Telegram Desktop; the message pane title shows how many are selected
+  until you send them or clear with `Esc`.
 - Compose suggestions for `@` mentions, `@inline_bot query` inline results, and
   `/` bot commands in the current chat. Inline bot results render as a grid of
   thumbnails rather than a list.

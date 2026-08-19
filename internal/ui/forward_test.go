@@ -52,8 +52,10 @@ func TestToggleMarkUnmarks(t *testing.T) {
 	}
 }
 
-// The safety property: it must be impossible to forward a message you cannot see.
-func TestMarksArePrunedByAJump(t *testing.T) {
+// A mark is a promise about a message, not about the scroll position. Telegram Desktop keeps a
+// selection across any amount of navigation, and an earlier version of this code threw it away on
+// every jump — which is a silent data loss the user cannot even see happen.
+func TestMarksSurviveAJump(t *testing.T) {
 	v := NewMessageViewport()
 	v.SetRect(0, 0, 40, 12)
 	v.SetMessages(readTestMessages("chat:1", 10, 11, 12))
@@ -61,19 +63,47 @@ func TestMarksArePrunedByAJump(t *testing.T) {
 	v.ToggleMark()
 	v.SelectByID("12")
 	v.ToggleMark()
-	v.TakeMarkedPruned()
 
 	// A jump replaces the window with a disjoint range.
 	v.SetMessages(readTestMessages("chat:1", 500, 501))
 
+	if v.MarkedCount() != 2 {
+		t.Fatalf("MarkedCount = %d, want both marks kept across a jump", v.MarkedCount())
+	}
+	got := v.MarkedIDs()
+	if len(got) != 2 || got[0] != "11" || got[1] != "12" {
+		t.Fatalf("MarkedIDs = %v, want [11 12] even though neither is loaded", got)
+	}
+}
+
+// Paging past the viewport cap evicts old rows. That must not take the marks with it.
+func TestMarksSurviveTheViewportCap(t *testing.T) {
+	v := NewMessageViewport()
+	v.SetRect(0, 0, 40, 12)
+	v.setMessageLimitForTest(5)
+	v.SetMessages(readTestMessages("chat:1", 10, 11, 12))
+	v.SelectByID("10")
+	v.ToggleMark()
+
+	v.SetMessages(readTestMessages("chat:1", 10, 11, 12, 13, 14, 15, 16, 17))
+
+	if v.MarkedCount() != 1 {
+		t.Fatalf("MarkedCount = %d, want the mark kept after old rows were trimmed", v.MarkedCount())
+	}
+}
+
+// Deleting a message is the one thing that genuinely invalidates a mark.
+func TestMarksDroppedForDeletedMessages(t *testing.T) {
+	v := NewMessageViewport()
+	v.SetRect(0, 0, 40, 12)
+	v.SetMessages(readTestMessages("chat:1", 10, 11, 12))
+	v.SelectByID("11")
+	v.ToggleMark()
+
+	v.RemoveIDs([]string{"11"})
+
 	if v.MarkedCount() != 0 {
-		t.Fatalf("MarkedCount = %d, want 0 — marks for messages out of view must go", v.MarkedCount())
-	}
-	if n := v.TakeMarkedPruned(); n != 2 {
-		t.Fatalf("pruned = %d, want 2 reported so the UI can tell the user", n)
-	}
-	if n := v.TakeMarkedPruned(); n != 0 {
-		t.Fatalf("pruned = %d on the second read, want the counter reset", n)
+		t.Fatalf("MarkedCount = %d, want a deleted message unmarked", v.MarkedCount())
 	}
 }
 

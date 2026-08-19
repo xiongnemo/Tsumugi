@@ -652,9 +652,6 @@ func (a *App) applyEvent(event telegram.Event) {
 			// whether to scroll to the tail, and the divider changes block heights.
 			a.applyHistoryWindow(event)
 			a.setMessages(event.Messages, event.PreserveViewport)
-			// A replacement prunes marks for messages that left the window; forwarding the
-			// survivors without saying so would be the wrong answer.
-			a.reportDroppedMarks()
 		}
 		if event.SelectMessageID != "" && a.selectMessageByID(event.SelectMessageID) && event.WindowedHistory {
 			// ensureSelectedVisible scrolls the minimum, which lands the first unread on the

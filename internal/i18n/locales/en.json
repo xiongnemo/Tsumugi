@@ -341,7 +341,7 @@
   "status.forward_nothing": "Nothing to forward.",
   "status.marked_for_forward": "Marked %d message(s). f forwards, F forwards without the author.",
   "status.unmarked": "Unmarked. %d still marked.",
-  "status.marks_dropped": "%d marked message(s) are no longer in view and were dropped.",
+  "status.marked_count": "%d selected",
   "status.nothing_marked": "Mark messages with v first.",
   "status.marks_cleared": "Selection cleared.",
   "forward.title": "Forward to",

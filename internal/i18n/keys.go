@@ -360,7 +360,7 @@ const (
 	KeyStatusForwardNothing   = "status.forward_nothing"
 	KeyStatusMarkedForForward = "status.marked_for_forward"
 	KeyStatusUnmarked         = "status.unmarked"
-	KeyStatusMarksDropped     = "status.marks_dropped"
+	KeyStatusMarkedCount      = "status.marked_count"
 	KeyStatusNothingMarked    = "status.nothing_marked"
 	KeyStatusMarksCleared     = "status.marks_cleared"
 	KeyForwardTitle           = "forward.title"

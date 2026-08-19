@@ -173,6 +173,9 @@ func (a *App) messagesPaneTitleText() string {
 	if n := a.messages.PendingBelow(); n > 0 {
 		title += " · " + fmt.Sprintf(i18n.T(i18n.KeyUINewInTitle), n)
 	}
+	if hint := a.markedTitleHint(); hint != "" {
+		title += " · " + hint
+	}
 	if a.historyWindowed {
 		// Without this the user is stranded in the middle of a long history with no visible
 		// way back to the latest messages.

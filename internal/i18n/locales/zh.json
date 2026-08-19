@@ -341,7 +341,7 @@
   "status.forward_nothing": "没有可转发的消息。",
   "status.marked_for_forward": "已选中 %d 条。f 转发，F 不带作者转发。",
   "status.unmarked": "已取消选中，还剩 %d 条。",
-  "status.marks_dropped": "有 %d 条已选中的消息不在当前视图内，已取消选中。",
+  "status.marked_count": "已选中 %d 条",
   "status.nothing_marked": "请先用 v 选中消息。",
   "status.marks_cleared": "已清空选中。",
   "forward.title": "转发到",
