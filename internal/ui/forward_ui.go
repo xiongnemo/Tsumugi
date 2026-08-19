@@ -206,7 +206,15 @@ func (a *App) appendForwardChats(needle string, prefixOnly bool) {
 // text, which both leaked internal peer keys like "channel:600" into the UI and left no way to
 // name the destination back to the user.
 func (a *App) addForwardRow(label, target, title string) {
-	a.forwardList.AddItem(label, "", 0, nil)
+	// The key is shown again, but purely as information now: the row index resolves through
+	// forwardTargets, so the visible text carries no meaning the code depends on. It is worth a
+	// line because it is the only way to tell two identically named chats apart, and it is what
+	// makes a mis-aimed forward diagnosable at a glance.
+	secondary := target
+	if target == telegram.SavedMessagesTarget {
+		secondary = ""
+	}
+	a.forwardList.AddItem(label, secondary, 0, nil)
 	a.forwardTargets = append(a.forwardTargets, forwardTarget{Key: target, Title: title})
 }
 

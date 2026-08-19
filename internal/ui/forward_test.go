@@ -426,8 +426,10 @@ func TestForwardPickerPrefersPrefixMatches(t *testing.T) {
 	}
 }
 
-// Peer keys used to be stored in the visible secondary text, which leaked "channel:600" into the UI.
-func TestForwardPickerDoesNotShowPeerKeys(t *testing.T) {
+// The peer key is shown on purpose — it is the only way to tell two identically named chats apart,
+// and it makes a mis-aimed forward diagnosable. What matters is that it is informational: the
+// destination is resolved from forwardTargets by index, so nothing depends on the visible text.
+func TestForwardPickerShowsPeerKeysWithoutDependingOnThem(t *testing.T) {
 	app := newSuggestionTestApp()
 	app.allChats = []telegram.Chat{{ID: "channel:600", Title: "Target", Subtitle: "group"}}
 	app.forwardList = tviewListForTest()
@@ -435,11 +437,45 @@ func TestForwardPickerDoesNotShowPeerKeys(t *testing.T) {
 
 	app.fillForwardList("")
 
+	var shown bool
 	for i := 0; i < app.forwardList.GetItemCount(); i++ {
-		main, secondary := app.forwardList.GetItemText(i)
-		if strings.Contains(main+secondary, "channel:600") {
-			t.Fatalf("row %d exposes the peer key: %q / %q", i, main, secondary)
+		_, secondary := app.forwardList.GetItemText(i)
+		if secondary == "channel:600" {
+			shown = true
 		}
+	}
+	if !shown {
+		t.Fatal("the peer key should be visible so identically named chats can be told apart")
+	}
+
+	// The rows and the resolved destinations must stay in step, which is the part that is
+	// load-bearing.
+	if app.forwardList.GetItemCount() != len(app.forwardTargets) {
+		t.Fatalf("rows = %d but targets = %d; the index must resolve",
+			app.forwardList.GetItemCount(), len(app.forwardTargets))
+	}
+	// Blanking the visible text must not change where a forward goes.
+	for i := 0; i < app.forwardList.GetItemCount(); i++ {
+		main, _ := app.forwardList.GetItemText(i)
+		app.forwardList.SetItemText(i, main, "")
+	}
+	if app.forwardTargets[len(app.forwardTargets)-1].Key != "channel:600" {
+		t.Fatal("the destination must come from forwardTargets, not the row text")
+	}
+}
+
+// Saved Messages is a sentinel, not a real peer, so showing it would be noise.
+func TestForwardPickerHidesTheSavedMessagesSentinel(t *testing.T) {
+	app := newSuggestionTestApp()
+	app.allChats = nil
+	app.forwardList = tviewListForTest()
+	app.forwardSource = "chat:1"
+
+	app.fillForwardList("")
+
+	_, secondary := app.forwardList.GetItemText(0)
+	if strings.Contains(secondary, telegram.SavedMessagesTarget) {
+		t.Fatalf("row 0 secondary = %q, want the sentinel hidden", secondary)
 	}
 }
 

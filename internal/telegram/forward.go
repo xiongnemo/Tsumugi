@@ -78,7 +78,7 @@ func sanitizeForwardIDs(lookup func(int) (storage.Message, bool), wanted []strin
 }
 
 // forwardTargetPeer resolves a picker target to an input peer.
-func (c *GotdClient) forwardTargetPeer(ctx context.Context, accountID, target string) (tg.InputPeerClass, error) {
+func (c *GotdClient) forwardTargetPeer(ctx context.Context, accountID string, api *tg.Client, target string) (tg.InputPeerClass, error) {
 	if target == SavedMessagesTarget {
 		return &tg.InputPeerSelf{}, nil
 	}
@@ -92,7 +92,7 @@ func (c *GotdClient) forwardTargetPeer(ctx context.Context, accountID, target st
 	if !ok {
 		return nil, fmt.Errorf("peer %s not found", target)
 	}
-	return inputPeer(p)
+	return c.resolveInputPeer(ctx, api, p)
 }
 
 // forwardMessages copies the given messages from one chat into another.
@@ -117,12 +117,12 @@ func (c *GotdClient) forwardMessages(ctx context.Context, accountID string, api 
 		return
 	}
 
-	from, err := c.forwardTargetPeer(ctx, accountID, cmd.PeerKey)
+	from, err := c.forwardTargetPeer(ctx, accountID, api, cmd.PeerKey)
 	if err != nil {
 		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: cmd.PeerKey, Error: err})
 		return
 	}
-	to, err := c.forwardTargetPeer(ctx, accountID, cmd.ForwardTarget)
+	to, err := c.forwardTargetPeer(ctx, accountID, api, cmd.ForwardTarget)
 	if err != nil {
 		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: cmd.PeerKey, Error: err})
 		return
@@ -147,6 +147,13 @@ func (c *GotdClient) forwardMessages(ctx context.Context, accountID string, api 
 		ToPeer:     to,
 		DropAuthor: cmd.ForwardDropAuthor,
 	}
+	debuglog.Log("forward_request", map[string]any{
+		"from_key": cmd.PeerKey,
+		"to_key":   cmd.ForwardTarget,
+		"from":     describeInputPeer(from),
+		"to":       describeInputPeer(to),
+		"ids":      ids,
+	})
 	send := c.forwardSend
 	if send == nil {
 		send = api.MessagesForwardMessages
