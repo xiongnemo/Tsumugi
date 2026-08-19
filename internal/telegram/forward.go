@@ -8,6 +8,7 @@ import (
 
 	"github.com/gotd/td/tg"
 
+	"github.com/nemo/Tsumugi/internal/debuglog"
 	"github.com/nemo/Tsumugi/internal/i18n"
 	"github.com/nemo/Tsumugi/internal/storage"
 )
@@ -154,7 +155,13 @@ func (c *GotdClient) forwardMessages(ctx context.Context, accountID string, api 
 		return send(ctx, req)
 	})
 	if err != nil {
-		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: cmd.PeerKey, Error: fmt.Errorf("forward messages: %w", err)})
+		debuglog.Log("forward_failed", map[string]any{
+			"from":    cmd.PeerKey,
+			"to":      cmd.ForwardTarget,
+			"ids":     ids,
+			"raw_err": err.Error(),
+		})
+		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: cmd.PeerKey, Error: rpcError("forward messages", err)})
 		return
 	}
 

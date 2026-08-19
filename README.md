@@ -306,6 +306,19 @@ about it:
 - **~16 colors.** Previews emit 24-bit ANSI and `tcell` downsamples; output is
   rougher but correct.
 
+### Diagnostics
+
+The status bar can only show a truncated line, so failures are also written to a file:
+
+```pwsh
+$env:TSUMUGI_DEBUG = '1'          # NDJSON to debug-tsumugi.log in the working directory
+$env:TSUMUGI_DEBUG_LOG = 'C:\tmp\tsumugi.log'   # optional, override the path
+```
+
+Every error that reaches the UI is recorded there with its full text and the peer it concerned.
+Nothing is ever written to stdout or stderr while the TUI is running — that would corrupt the
+screen tview is drawing.
+
 ## Keybindings
 
 - `Tab`: switch focus between folders, chat list, message view, and composer

@@ -22,6 +22,7 @@ import (
 	"github.com/gotd/td/tg"
 
 	"github.com/nemo/Tsumugi/internal/config"
+	"github.com/nemo/Tsumugi/internal/debuglog"
 	"github.com/nemo/Tsumugi/internal/i18n"
 	termmedia "github.com/nemo/Tsumugi/internal/media"
 	"github.com/nemo/Tsumugi/internal/storage"
@@ -2804,6 +2805,15 @@ func stringsJoin(parts ...string) string {
 func sendEvent(ctx context.Context, events chan<- Event, event Event) {
 	if event.Kind == "" {
 		event.Kind = EventStatus
+	}
+	if event.Error != nil {
+		// Logged here rather than at each call site: the status bar shows one truncated column,
+		// so this is the only place the full text is recoverable, and routing every error through
+		// it means a new call site cannot forget.
+		debuglog.Error("telegram", event.Error, map[string]any{
+			"kind":     string(event.Kind),
+			"peer_key": event.PeerKey,
+		})
 	}
 	if event.StatusMsg.IsZero() && event.Error != nil {
 		event.StatusMsg = i18n.M(i18n.KeyStatusError, event.Error.Error())

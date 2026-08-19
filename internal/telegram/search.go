@@ -67,7 +67,7 @@ func (c *GotdClient) searchMessages(ctx context.Context, accountID string, api *
 		hits, err = c.searchInPeer(ctx, accountID, api, cmd.PeerKey, query)
 	}
 	if err != nil {
-		sendEvent(ctx, events, Event{Kind: EventError, Error: fmt.Errorf("search: %w", err), RequestID: cmd.RequestID})
+		sendEvent(ctx, events, Event{Kind: EventError, Error: rpcError("search", err), RequestID: cmd.RequestID})
 		return
 	}
 	sendEvent(ctx, events, Event{
