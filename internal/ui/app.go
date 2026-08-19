@@ -1292,7 +1292,7 @@ func (a *App) showMessageActions() {
 			a.runMessageAction(action.ID, msg)
 		})
 	}
-	formH := messageActionFormRows(labels, a.overlayWidth()) + 1
+	formH := messageActionFormHeight(labels, a.overlayWidth())
 
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(top, 0, 1, true).

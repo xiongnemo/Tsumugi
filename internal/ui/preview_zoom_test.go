@@ -214,50 +214,53 @@ func writeTestPNG(t *testing.T, w, h int) string {
 }
 
 // The old height estimate reserved two rows per action for what tview draws as a single row of
-// buttons, and every over-reserved row came out of the preview above it.
-func TestMessageActionFormRowsFitsOnOneLineWhenItCan(t *testing.T) {
+// buttons, and every over-reserved row came out of the preview above it. One button row plus the
+// Form's one-cell top inset is two.
+func TestMessageActionFormHeightIsMinimalWhenButtonsFitOneLine(t *testing.T) {
 	labels := []string{"Reply", "Delete", "Copy"}
 
-	if got := messageActionFormRows(labels, 120); got != 1 {
-		t.Fatalf("rows = %d, want 1 — three short buttons fit a 120-column terminal", got)
+	if got := messageActionFormHeight(labels, 120); got != formContentInset+1 {
+		t.Fatalf("height = %d, want %d — three short buttons fit a 120-column terminal",
+			got, formContentInset+1)
 	}
 }
 
 // tview silently drops buttons that do not fit unless the form wraps, so the height has to account
 // for the wrapping it now does.
-func TestMessageActionFormRowsWrapsOnANarrowTerminal(t *testing.T) {
+func TestMessageActionFormHeightGrowsOnANarrowTerminal(t *testing.T) {
 	labels := []string{
 		"Reply", "Delete", "Copy", "Open media", "Download media",
 		"React", "Forward this message", "Mark for forwarding (v)", "Cancel",
 	}
 
-	wide := messageActionFormRows(labels, 200)
-	narrow := messageActionFormRows(labels, 80)
+	wide := messageActionFormHeight(labels, 200)
+	narrow := messageActionFormHeight(labels, 80)
 
 	if narrow <= wide {
 		t.Fatalf("80 columns needed %d rows and 200 needed %d; narrower must need more", narrow, wide)
 	}
-	// It must still be a fraction of what the old two-rows-per-action estimate demanded.
+	// It must still be a fraction of what the old two-rows-per-action estimate demanded, or the
+	// preview goes back to being squeezed.
 	if narrow >= len(labels)*2 {
-		t.Fatalf("rows = %d for %d buttons, no better than the old estimate", narrow, len(labels))
+		t.Fatalf("height = %d for %d buttons, no better than the old estimate", narrow, len(labels))
 	}
 }
 
-func TestMessageActionFormRowsHandlesNoGeometry(t *testing.T) {
-	if got := messageActionFormRows([]string{"Reply"}, 0); got < 1 {
-		t.Fatalf("rows = %d, want at least 1 with no width known", got)
+func TestMessageActionFormHeightHandlesNoGeometry(t *testing.T) {
+	if got := messageActionFormHeight([]string{"Reply"}, 0); got < formContentInset+1 {
+		t.Fatalf("height = %d, want at least %d with no width known", got, formContentInset+1)
 	}
-	if got := messageActionFormRows(nil, 80); got != 1 {
-		t.Fatalf("rows = %d for no buttons, want 1", got)
+	if got := messageActionFormHeight(nil, 80); got != formContentInset+1 {
+		t.Fatalf("height = %d for no buttons, want %d", got, formContentInset+1)
 	}
 }
 
 // CJK labels are double-width, so counting runes would under-reserve and clip the bar.
-func TestMessageActionFormRowsUsesDisplayWidth(t *testing.T) {
+func TestMessageActionFormHeightUsesDisplayWidth(t *testing.T) {
 	cjk := []string{"转发这条消息", "选中以便转发（v）", "回复", "删除", "复制"}
 
-	narrow := messageActionFormRows(cjk, 40)
-	if narrow < 2 {
+	narrow := messageActionFormHeight(cjk, 40)
+	if narrow < formContentInset+formWrapRows {
 		t.Fatalf("rows = %d; double-width labels must not be counted as single cells", narrow)
 	}
 }

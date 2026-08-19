@@ -134,27 +134,56 @@ func (a *App) renderPreviewAsync(msg telegram.Message, view *tview.TextView, seq
 	}()
 }
 
-// messageActionFormRows mirrors tview's button wrapping so the action bar can be given the height
-// it actually needs.
+// Form geometry that has to be mirrored, all of it verified against a drawn Form rather than read
+// off the source, because reading it produced three wrong answers in a row.
+const (
+	// A Form insets its content by one cell on each side even with no border, so the first button
+	// row sits at y=1 and the usable width is two cells short. Missing this is what made the
+	// model think two more buttons fitted on the first row than actually did.
+	formContentInset = 1
+	// Each wrap advances by lineHeight+1 in Form.Draw, and lineHeight is 1 with no form items.
+	formWrapRows = 2
+	// tview pads a button label by four cells and leaves one cell between buttons.
+	formButtonPadding = 4
+	formButtonGap     = 1
+)
+
+// messageActionFormHeight is the height the action bar needs for its buttons.
 //
-// tview lays Form buttons left to right, advancing a line when the next one will not fit. The old
-// estimate reserved two rows per action — twenty-odd rows for what is usually a single line — and
-// every row it over-reserved was taken from the preview above it.
-func messageActionFormRows(labels []string, width int) int {
+// The original estimate reserved two rows per action — twenty-odd rows for what is usually a single
+// line — and every over-reserved row was taken from the preview above it. Correcting that then
+// overshot the other way and hid the bar entirely, twice, because a wrap costs two rows and the
+// content is inset.
+//
+// Display width, not rune count: the Chinese labels are double-width and wrap on a terminal that
+// looks far too wide to need it, which is the case that actually broke.
+//
+// TestMessageActionFormHeightMatchesRealForm holds this to a Form that has really been drawn.
+func messageActionFormHeight(labels []string, width int) int {
 	if width <= 0 {
 		width = 80
 	}
-	rows, x := 1, 0
-	for _, label := range labels {
-		// tview: label width plus four cells of padding, then a one-cell gap between buttons.
-		w := render.StringWidth(label) + 4
-		if x > 0 && x+w+1 > width {
-			rows++
-			x = 0
-		}
-		x += w + 1
+	usable := width - formContentInset*2
+	if usable < 1 {
+		usable = 1
 	}
-	return rows
+	extraRows, x := 0, 0
+	for _, label := range labels {
+		w := render.StringWidth(label) + formButtonPadding
+		space := usable - x
+		// Mirrors Form.Draw, which compares the space against the label without its padding.
+		if space < w-formButtonPadding {
+			x = 0
+			extraRows += formWrapRows
+			space = usable
+		}
+		if w > space {
+			w = space
+		}
+		x += w + formButtonGap
+	}
+	// One row of inset above, the button rows themselves, and the last row is inclusive.
+	return formContentInset + extraRows + 1
 }
 
 // overlayWidth is the width a fullscreen overlay gets, used to lay out the action bar.
