@@ -16,8 +16,12 @@ the network needs it:
 ```bash
 export GOPROXY='https://goproxy.cn,direct'
 go test ./...
-mkdir -p ./dist && go build -trimpath -ldflags="-s -w" -o ./dist/tsumugi.exe .
+./build-dev.sh          # builds ./Tsumugi.exe and prints the version
 ```
+
+`build-dev.sh` derives the version the way `release.yml` does — patch number is
+the nearest exact semver tag's patch plus the commits since that tag. Passing
+`-ldflags` by hand is how a build ends up mislabelled `v0.1.0` forever.
 
 `AGENTS.md` also lists the PowerShell equivalents, which is what the user runs interactively.
 
