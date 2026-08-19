@@ -239,3 +239,30 @@ func (a *App) jumpToLatest() {
 	a.commands <- telegram.Command{Kind: telegram.CommandOpenChat, PeerKey: a.currentChat}
 	a.setStatusMsg(i18n.KeyStatusAtTail)
 }
+
+// dismissTopOverlay closes the frontmost overlay, reporting whether there was one.
+//
+// Shared by Esc and q so the two can never disagree about what is on top, and so a new overlay is
+// covered by both the moment it is added here. The order is outermost-last: the message action
+// panel sits above the pinned, forward and search panels because it is opened from them.
+//
+// The QR login prompt is deliberately absent. Abandoning a half-finished login to a stray keystroke
+// is not a dismissal, it is data loss; that overlay offers p to fall back and Ctrl+C to give up.
+func (a *App) dismissTopOverlay() bool {
+	switch {
+	case a.msgActionForm != nil || a.msgActionPreview != nil || a.msgActionDetail != nil:
+		a.restoreMessageFocus()
+		return true
+	case a.pinnedList != nil:
+		a.closePinnedPanel()
+		return true
+	case a.forwardList != nil:
+		a.closeForwardPicker()
+		return true
+	case a.searchList != nil:
+		a.closeSearchResults()
+		return true
+	default:
+		return false
+	}
+}

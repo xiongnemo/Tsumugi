@@ -375,6 +375,8 @@ screen tview is drawing.
 - `O`: open the selected message media preview externally
 - `?`: open settings (General, Account, Network)
 - `P`: show proxy settings
+- `q`: closes the frontmost overlay — preview, pinned list, forward picker, search results —
+  and quits only when none is open. `Esc` does the same.
 - `Esc`: close modal and return to chat list
 - `q` or `Ctrl+C`: quit
 
