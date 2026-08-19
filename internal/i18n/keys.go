@@ -101,6 +101,7 @@ const (
 	KeyUIStatus                  = "ui.status"
 	KeyUIMessage                 = "ui.message"
 	KeyUIPreview                 = "ui.preview"
+	KeyUIActions                 = "ui.actions"
 	KeyUIPreviewZoomHint         = "ui.preview_zoom_hint"
 	KeyUIPreviewVideoUnsupported = "ui.preview_video_unsupported"
 	KeyUISearch                  = "ui.search"
@@ -364,9 +365,11 @@ const (
 
 	KeySettingsJumpUnread = "settings.jump_unread"
 
-	KeyUIUnreadDivider   = "ui.unread_divider"
-	KeyUIWindowedHistory = "ui.windowed_history"
-	KeyStatusAtTail      = "status.at_tail"
+	KeyUIUnreadDivider    = "ui.unread_divider"
+	KeyUIWindowedHistory  = "ui.windowed_history"
+	KeyStatusAtTail       = "status.at_tail"
+	KeyStatusLoadingNewer = "status.loading_newer"
+	KeyStatusNewerLoaded  = "status.newer_loaded"
 
 	KeyStatusForwarded        = "status.forwarded"
 	KeyStatusForwardNothing   = "status.forward_nothing"

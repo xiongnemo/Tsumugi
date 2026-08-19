@@ -17,6 +17,10 @@ import (
 
 const defaultMessageViewportLimit = 1000
 
+// reachEdgeInterval throttles the load-older and load-newer hooks so holding a key at either
+// boundary does not become one request per key repeat.
+const reachEdgeInterval = 600 * time.Millisecond
+
 type MessageViewport struct {
 	*tview.Box
 
@@ -32,6 +36,8 @@ type MessageViewport struct {
 	placeholder              string
 	onAction                 func()
 	onReachOlder             func()
+	onReachNewer             func()
+	lastNewerFire            time.Time
 	onSelectionChanged       func()
 	notifiedSelectedID       string
 	unreadDividerID          string
@@ -378,11 +384,34 @@ func (v *MessageViewport) SetOnReachOlder(fn func()) {
 	v.onReachOlder = fn
 }
 
+// SetOnReachNewer registers the mirror of SetOnReachOlder, fired when the view reaches the bottom
+// of what it holds.
+//
+// There was no such hook: scrolling up loaded older history and scrolling down loaded nothing. That
+// was invisible while every chat opened at its newest message, because there was nothing newer to
+// load — landing on the first unread means reading forward, and the window just ended.
+func (v *MessageViewport) SetOnReachNewer(fn func()) {
+	v.onReachNewer = fn
+}
+
+func (v *MessageViewport) fireReachNewer() {
+	if v.onReachNewer == nil || len(v.messages) == 0 {
+		return
+	}
+	// Same throttle as reach-older: holding a key at the boundary must not become one request
+	// per repeat.
+	if time.Since(v.lastNewerFire) < reachEdgeInterval {
+		return
+	}
+	v.lastNewerFire = time.Now()
+	v.onReachNewer()
+}
+
 func (v *MessageViewport) fireReachOlder() {
 	if v.onReachOlder == nil || len(v.messages) == 0 {
 		return
 	}
-	if time.Since(v.lastOlderFire) < 600*time.Millisecond {
+	if time.Since(v.lastOlderFire) < reachEdgeInterval {
 		return
 	}
 	v.lastOlderFire = time.Now()
@@ -630,6 +659,8 @@ func (v *MessageViewport) SelectDelta(delta int) {
 	}
 	if v.selected >= len(v.messages) {
 		v.selected = len(v.messages) - 1
+		// Reading forward off the end of what is held is the main way the newer page is wanted.
+		v.fireReachNewer()
 	}
 	v.followEnd = false
 	v.ensureSelectedVisible()
@@ -763,6 +794,9 @@ func (v *MessageViewport) InputHandler() func(event *tcell.EventKey, setFocus fu
 			if ih > 0 && len(v.messages) > 0 {
 				v.layout(iw)
 				maxScr := maxInt(0, v.totalHeight()-ih)
+				if v.scroll >= maxScr {
+					v.fireReachNewer()
+				}
 				v.scroll += 10
 				if v.scroll > maxScr {
 					v.scroll = maxScr
@@ -779,6 +813,7 @@ func (v *MessageViewport) InputHandler() func(event *tcell.EventKey, setFocus fu
 			if len(v.messages) > 0 {
 				v.selected = len(v.messages) - 1
 				v.ScrollToEnd()
+				v.fireReachNewer()
 			}
 		case tcell.KeyEnter:
 			if v.onAction != nil {

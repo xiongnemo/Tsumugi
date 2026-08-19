@@ -385,5 +385,8 @@
   "status.forward_no_target": "No matching destination - clear the filter.",
   "status.forwarding_to": "Forwarding %d message(s) to %s...",
   "ui.preview_zoom_hint": "-/= zoom, 0 reset, arrows pan",
-  "ui.preview_video_unsupported": "Video cannot be previewed inline in this terminal. Use Open media or Download media."
+  "ui.preview_video_unsupported": "Video cannot be previewed inline in this terminal. Use Open media or Download media.",
+  "ui.actions": "Actions",
+  "status.loading_newer": "Loading newer messages...",
+  "status.newer_loaded": "Loaded %d newer messages."
 }

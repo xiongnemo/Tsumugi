@@ -193,3 +193,43 @@ func (a *App) refreshFooter() {
 	state.SearchHits = len(a.searchHits)
 	a.footer.SetText(render.FooterWithState(state, string(a.cfg.AuthMode), version.String(), a.cfg.Proxy))
 }
+
+// onReachNewerMessages asks for the page after the newest message held.
+//
+// Only meaningful while the pane shows a mid-history window: at the tail there is nothing newer, and
+// asking would be a round trip per scroll.
+func (a *App) onReachNewerMessages() {
+	if !a.historyWindowed || !a.draftablePeer(a.currentChat) || a.commands == nil {
+		return
+	}
+	msgs := a.messages.Messages()
+	if len(msgs) == 0 {
+		return
+	}
+	newest, err := strconv.Atoi(msgs[len(msgs)-1].ID)
+	if err != nil || newest <= 0 {
+		return
+	}
+	select {
+	case a.commands <- telegram.Command{Kind: telegram.CommandLoadNewer, PeerKey: a.currentChat, MessageID: newest}:
+	default:
+		// Dropping one is fine; the next scroll at the boundary asks again.
+	}
+}
+
+// jumpToLatest reloads the chat at its newest messages.
+//
+// Unconditional, unlike returnToTail: bound to G it has to mean "take me to the end" whether or not
+// the pane happens to be showing a window, because a user who wants the latest message should not
+// have to know which state they are in. At the tail it is a cache hit and effectively free.
+func (a *App) jumpToLatest() {
+	if !a.draftablePeer(a.currentChat) || a.commands == nil {
+		a.messages.ScrollToEnd()
+		return
+	}
+	a.historyWindowed = false
+	a.unreadDividerID = ""
+	a.messages.SetUnreadDividerID("")
+	a.commands <- telegram.Command{Kind: telegram.CommandOpenChat, PeerKey: a.currentChat}
+	a.setStatusMsg(i18n.KeyStatusAtTail)
+}

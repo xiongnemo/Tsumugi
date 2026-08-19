@@ -84,6 +84,9 @@ type Event struct {
 	WindowedHistory bool
 	// FirstUnreadID is the message to draw the unread divider above, when there is one.
 	FirstUnreadID string
+	// ReachedNewest says the viewport now holds the newest message, so the "back to latest"
+	// affordance can stop advertising itself.
+	ReachedNewest bool
 	// SearchHits carries a completed search. RequestID gates it, so a slow earlier search
 	// cannot overwrite the results of a newer one.
 	SearchHits []SearchHit
@@ -210,6 +213,7 @@ const (
 	CommandMarkRead         CommandKind = "mark_read"
 	CommandForwardMessages  CommandKind = "forward_messages"
 	CommandSearchMessages   CommandKind = "search_messages"
+	CommandLoadNewer        CommandKind = "load_newer"
 )
 
 type Command struct {

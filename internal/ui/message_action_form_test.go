@@ -20,6 +20,7 @@ func smallestFormHeightThatFits(t *testing.T, labels []string, width int) int {
 	for h := 1; h <= 40; h++ {
 		form := tview.NewForm()
 		form.SetHorizontal(true)
+		form.SetBorder(true)
 		for _, label := range labels {
 			form.AddButton(label, nil)
 		}
@@ -68,7 +69,7 @@ func TestMessageActionFormHeightMatchesRealForm(t *testing.T) {
 	for _, locale := range []string{"en", "zh"} {
 		labels := messageActionLabelsForLocale(t, locale)
 		for _, width := range []int{60, 70, 80, 100, 120, 160, 200, 240} {
-			reserved := messageActionFormHeight(labels, width)
+			reserved := messageActionFormHeight(labels, width-2) + 2
 			need := smallestFormHeightThatFits(t, labels, width)
 			if need < 0 {
 				t.Fatalf("locale %s width %d: no height placed every button", locale, width)

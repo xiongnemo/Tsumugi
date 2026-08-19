@@ -385,5 +385,8 @@
   "status.forward_no_target": "没有匹配的转发目标——请清空筛选。",
   "status.forwarding_to": "正在把 %d 条消息转发到 %s…",
   "ui.preview_zoom_hint": "-/= 缩放，0 复位，方向键平移",
-  "ui.preview_video_unsupported": "此终端无法内嵌预览视频。请用「打开媒体」或「下载媒体」。"
+  "ui.preview_video_unsupported": "此终端无法内嵌预览视频。请用「打开媒体」或「下载媒体」。",
+  "ui.actions": "操作",
+  "status.loading_newer": "正在加载更新的消息…",
+  "status.newer_loaded": "已加载 %d 条更新的消息。"
 }

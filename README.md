@@ -363,6 +363,9 @@ screen tview is drawing.
 - `L`: toggle outgoing message layout (message pane)
 - `R`: open the reaction panel for the selected message
 - `#`: expand the pinned banner into the full pinned message list
+- Reading forward from the first unread loads newer messages as you reach the bottom, the
+  way scrolling up loads older ones. **`G`** in the message pane always jumps to the latest
+  message, whether or not you are looking at older history.
 - In the message detail preview: `-` / `=` zoom out and in, `0` resets to fit, arrows pan
   once the image is larger than the pane. Zooming past the source resolution does nothing,
   since the renderer never upscales.

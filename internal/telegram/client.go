@@ -1309,6 +1309,10 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				go c.saveDraft(ctx, accountID, api, events, command)
 			case CommandSetTyping:
 				go c.setTyping(ctx, accountID, api, command.PeerKey, command.Typing)
+			case CommandLoadNewer:
+				peerKey := command.PeerKey
+				afterID := command.MessageID
+				go c.loadNewer(ctx, accountID, api, events, peerKey, afterID)
 			case CommandSearchMessages:
 				go c.searchMessages(ctx, accountID, api, events, command)
 			case CommandForwardMessages:

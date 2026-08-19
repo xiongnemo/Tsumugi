@@ -242,6 +242,7 @@ func (a *App) build() {
 	a.messages.SetText(i18n.T(i18n.KeyUIWelcomeHint))
 	a.messages.SetActionFunc(a.showMessageActions)
 	a.messages.SetOnReachOlder(a.onReachOlderMessages)
+	a.messages.SetOnReachNewer(a.onReachNewerMessages)
 	a.messages.SetOnSelectionChanged(a.onMessageCursorMoved)
 	// SetWrap, not SetWordWrap: the latter only disables wrapping at word boundaries and still
 	// wraps mid-word, which pushed the second footer line off the bottom of its two rows and took
@@ -494,7 +495,8 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 			return nil
 		}
 	case 'G':
-		if focus == a.messages && a.returnToTail() {
+		if focus == a.messages {
+			a.jumpToLatest()
 			return nil
 		}
 		a.showSearchWithScope("global")
@@ -660,6 +662,12 @@ func (a *App) applyEvent(event telegram.Event) {
 		// Falling through to the replace branch would hand setMessages an empty list and blank
 		// the whole conversation, which is what happened when a message was deleted from
 		// another session.
+		if len(event.Messages) == 0 && event.ReachedNewest {
+			// A forward page that came back empty: the pane already holds the newest message.
+			a.historyWindowed = false
+			a.applyMessagesPaneTitle()
+			return
+		}
 		if len(event.Messages) == 0 && len(event.RemoveMessageIDs) > 0 {
 			a.applyMessagesPaneTitle()
 			return
@@ -672,6 +680,10 @@ func (a *App) applyEvent(event telegram.Event) {
 			a.patchMessages(event.Messages)
 		} else if event.Merge {
 			a.mergeMessages(event.Messages, event.PreserveViewport)
+			if event.ReachedNewest {
+				a.historyWindowed = false
+				a.applyMessagesPaneTitle()
+			}
 		} else {
 			// Must run before the replace: setMessages consults historyWindowed to decide
 			// whether to scroll to the tail, and the divider changes block heights.
@@ -1279,6 +1291,11 @@ func (a *App) showMessageActions() {
 	// the width is silently dropped — see the `break` in Form.Draw — so actions would simply
 	// become unreachable on a narrow terminal, which is exactly where they are hardest to lose.
 	form.SetHorizontal(true)
+	// Bordered and titled on purpose. Measurement says the buttons land inside their rect at every
+	// width, so the earlier report of an invisible bar was a single unbordered row hugging the
+	// bottom edge — indistinguishable from nothing being there. Two rows of chrome is a cheap
+	// price for a region you can actually find, now that the bar is not wasting twenty.
+	form.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeyUIActions) + " ")
 	labels := make([]string, 0, len(actions))
 	for _, item := range actions {
 		action := item
@@ -1292,7 +1309,9 @@ func (a *App) showMessageActions() {
 			a.runMessageAction(action.ID, msg)
 		})
 	}
-	formH := messageActionFormHeight(labels, a.overlayWidth())
+	// The border takes a cell from each side, so the buttons lay out in a narrower box and the
+	// height needs the two border rows back.
+	formH := messageActionFormHeight(labels, a.overlayWidth()-2) + 2
 
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(top, 0, 1, true).
