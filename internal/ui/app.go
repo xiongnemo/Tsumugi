@@ -218,7 +218,10 @@ func (a *App) build() {
 		AddItem(a.statusConn, 0, 2, false).
 		AddItem(a.statusForeground, 0, 4, false).
 		AddItem(a.statusBackground, 0, 2, false)
-	a.statusBar.SetBorder(true)
+	// Deliberately borderless. It is allotted a single row, and a bordered box spends both of
+	// its rows on the border — the inner rect ends up zero-height and the text is never drawn,
+	// which is why the status bar looked permanently empty. A border would cost two more rows,
+	// which the 80x25 console target cannot spare for decoration.
 
 	a.folders.AddItem("All", "", 0, func() {
 		a.currentFolder = 0
@@ -235,7 +238,10 @@ func (a *App) build() {
 	a.messages.SetActionFunc(a.showMessageActions)
 	a.messages.SetOnReachOlder(a.onReachOlderMessages)
 	a.messages.SetOnSelectionChanged(a.onMessageCursorMoved)
-	a.footer.SetWordWrap(false)
+	// SetWrap, not SetWordWrap: the latter only disables wrapping at word boundaries and still
+	// wraps mid-word, which pushed the second footer line off the bottom of its two rows and took
+	// the proxy address and version with it.
+	a.footer.SetWrap(false)
 	a.refreshFooter()
 
 	a.composeStack = tview.NewFlex().SetDirection(tview.FlexRow).

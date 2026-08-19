@@ -72,3 +72,21 @@ func TestFooterKeysAlwaysOfferAWayOut(t *testing.T) {
 		}
 	}
 }
+
+// Each footer line must be a single logical line, because the footer is a two-row TextView with
+// wrapping off: an embedded newline would silently push the status line out of view, which is what
+// happened when the long key line was allowed to character-wrap.
+func TestFooterLinesContainNoEmbeddedNewlines(t *testing.T) {
+	states := []FooterState{{}, {MarkedCount: 3}, {SearchHits: 5}, {MarkedCount: 2, SearchHits: 9}}
+	for _, state := range states {
+		if strings.Contains(FooterKeys(state), "\n") {
+			t.Errorf("FooterKeys(%+v) contains a newline", state)
+		}
+	}
+	status := FooterStatus("user", "v0.1.29", network.ProxyConfig{
+		Kind: network.ProxySOCKS5, Source: network.SourceManual, Address: "127.0.0.1:1080",
+	})
+	if strings.Contains(status, "\n") {
+		t.Errorf("FooterStatus contains a newline: %q", status)
+	}
+}

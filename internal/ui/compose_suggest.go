@@ -458,9 +458,11 @@ func (a *App) renderComposeGhost() {
 	}
 	if hint == "" {
 		a.suggest.ghost.SetText("")
+		a.syncComposerLayout()
 		return
 	}
 	a.suggest.ghost.SetText("[gray]" + tview.Escape(hint))
+	a.syncComposerLayout()
 }
 
 func (a *App) closeComposeSuggestions() {

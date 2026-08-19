@@ -19,7 +19,6 @@ const (
 	composerMinTextRows = 1
 	composerMaxTextRows = 6
 	composerBorderRows  = 2
-	composeGhostRows    = 1
 )
 
 // composerSendKey reports whether a key event should send the message rather than reach the
@@ -97,12 +96,24 @@ func (a *App) composerBoxRows() int {
 	return composerTextRows(a.composer.GetText(), innerWidth) + composerBorderRows
 }
 
+// composeGhostRows is 1 only while there is ghost text. An unconditional row left a permanent
+// blank gap between the composer and the status bar.
+func (a *App) composeGhostRows() int {
+	if a.suggest == nil || a.suggest.ghost == nil {
+		return 0
+	}
+	if strings.TrimSpace(a.suggest.ghost.GetText(true)) == "" {
+		return 0
+	}
+	return 1
+}
+
 func (a *App) composeStackRows() int {
 	panelRows := 0
 	if a.suggest != nil {
 		panelRows = a.suggest.panelRows
 	}
-	return panelRows + a.composerBoxRows() + composeGhostRows
+	return panelRows + a.composerBoxRows() + a.composeGhostRows()
 }
 
 // syncComposerLayout is the single place that resizes the composer and the stack around it.
@@ -112,6 +123,9 @@ func (a *App) syncComposerLayout() {
 		return
 	}
 	a.composeStack.ResizeItem(a.composer, a.composerBoxRows(), 0)
+	if a.suggest != nil && a.suggest.ghost != nil {
+		a.composeStack.ResizeItem(a.suggest.ghost, a.composeGhostRows(), 0)
+	}
 	if a.rightPane != nil {
 		a.rightPane.ResizeItem(a.composeStack, a.composeStackRows(), 0)
 	}

@@ -14,7 +14,6 @@ func (a *App) applyMainLocale() {
 	a.chats.SetTitle(" " + i18n.T(i18n.KeyUIChats) + " ")
 	a.composer.SetTitle(" " + i18n.T(i18n.KeyUICompose) + " ")
 	a.composer.SetPlaceholder(i18n.T(i18n.KeyUIComposePlaceholder))
-	a.statusBar.SetTitle(" " + i18n.T(i18n.KeyUIStatus) + " ")
 	a.footer.SetText(render.Footer(string(a.cfg.AuthMode), version.String(), a.cfg.Proxy))
 	a.applyMessagesPaneTitle()
 	a.applyMessagesPlaceholder()

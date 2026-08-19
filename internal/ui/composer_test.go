@@ -158,7 +158,7 @@ func TestComposeStackRowsIsPanelPlusComposerPlusGhost(t *testing.T) {
 	app := newSuggestionTestApp()
 	app.suggest.panelRows = 7
 
-	want := 7 + app.composerBoxRows() + composeGhostRows
+	want := 7 + app.composerBoxRows() + app.composeGhostRows()
 	if got := app.composeStackRows(); got != want {
 		t.Fatalf("composeStackRows = %d, want %d", got, want)
 	}
