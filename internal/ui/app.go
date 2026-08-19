@@ -1230,8 +1230,6 @@ func (a *App) showMessageActions() {
 	}
 	actions = append(actions, messageAction{ID: "cancel", LabelKey: i18n.KeyActionCancel})
 
-	formH := len(actions)*2 + 4
-
 	bodyText := tview.TranslateANSI(render.MessageDetailWithoutPreview(msg))
 	detail := tview.NewTextView().
 		SetDynamicColors(true).
@@ -1276,9 +1274,17 @@ func (a *App) showMessageActions() {
 	}
 
 	form := tview.NewForm()
+	// Counter-intuitively named: "horizontal" is about item layout, but it is also what makes
+	// tview *wrap* buttons onto further lines. Left at the default, a button that does not fit
+	// the width is silently dropped — see the `break` in Form.Draw — so actions would simply
+	// become unreachable on a narrow terminal, which is exactly where they are hardest to lose.
+	form.SetHorizontal(true)
+	labels := make([]string, 0, len(actions))
 	for _, item := range actions {
 		action := item
-		form.AddButton(i18n.T(action.LabelKey), func() {
+		label := i18n.T(action.LabelKey)
+		labels = append(labels, label)
+		form.AddButton(label, func() {
 			a.restoreMessageFocus()
 			if action.ID == "cancel" {
 				return
@@ -1286,6 +1292,7 @@ func (a *App) showMessageActions() {
 			a.runMessageAction(action.ID, msg)
 		})
 	}
+	formH := messageActionFormRows(labels, a.overlayWidth()) + 1
 
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(top, 0, 1, true).
@@ -1327,7 +1334,14 @@ func (a *App) showMessageActions() {
 		return event
 	})
 	a.app.SetRoot(layout, true)
-	a.app.SetFocus(detail)
+	// The preview takes focus when there is one: arrows pan it, and the whole point of zoom is
+	// lost if the first thing the user has to do is Tab. Tab still reaches the detail text and
+	// the buttons.
+	if imgView != nil {
+		a.app.SetFocus(imgView)
+	} else {
+		a.app.SetFocus(detail)
+	}
 
 	if deferRaster && imgView != nil {
 		a.renderPreviewAsync(msg, imgView, seq)

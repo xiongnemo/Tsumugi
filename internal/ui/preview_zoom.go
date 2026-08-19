@@ -7,6 +7,7 @@ import (
 	"github.com/rivo/tview"
 
 	"github.com/nemo/Tsumugi/internal/i18n"
+	"github.com/nemo/Tsumugi/internal/render"
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
 
@@ -131,4 +132,40 @@ func (a *App) renderPreviewAsync(msg telegram.Message, view *tview.TextView, seq
 			a.applyPreviewTitle()
 		})
 	}()
+}
+
+// messageActionFormRows mirrors tview's button wrapping so the action bar can be given the height
+// it actually needs.
+//
+// tview lays Form buttons left to right, advancing a line when the next one will not fit. The old
+// estimate reserved two rows per action — twenty-odd rows for what is usually a single line — and
+// every row it over-reserved was taken from the preview above it.
+func messageActionFormRows(labels []string, width int) int {
+	if width <= 0 {
+		width = 80
+	}
+	rows, x := 1, 0
+	for _, label := range labels {
+		// tview: label width plus four cells of padding, then a one-cell gap between buttons.
+		w := render.StringWidth(label) + 4
+		if x > 0 && x+w+1 > width {
+			rows++
+			x = 0
+		}
+		x += w + 1
+	}
+	return rows
+}
+
+// overlayWidth is the width a fullscreen overlay gets, used to lay out the action bar.
+//
+// Read from the root rather than the screen so it works before the overlay itself has been drawn,
+// and falls back to the 80 columns the raw-console target assumes.
+func (a *App) overlayWidth() int {
+	if a.root != nil {
+		if _, _, w, _ := a.root.GetRect(); w > 0 {
+			return w
+		}
+	}
+	return 80
 }
