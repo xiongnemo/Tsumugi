@@ -381,5 +381,7 @@
   "ui.footer_forward_plain": "F 不带作者转发",
   "ui.footer_clear_marks": "Esc 清空",
   "ui.footer_marked_count": "已选 %d 条",
-  "ui.footer_search_next": "n/N 结果"
+  "ui.footer_search_next": "n/N 结果",
+  "status.forward_no_target": "没有匹配的转发目标——请清空筛选。",
+  "status.forwarding_to": "正在把 %d 条消息转发到 %s…"
 }

@@ -114,6 +114,9 @@ type App struct {
 	forwardInput      *tview.InputField
 	forwardSource     string
 	forwardDropAuthor bool
+	// forwardTargets is parallel to the picker rows, so the highlighted index resolves to a
+	// destination without hiding peer keys in visible text.
+	forwardTargets []forwardTarget
 	// Search state. searchCursor is a hit identity, not an index, so a viewport replacement
 	// cannot silently repoint it at a different result.
 	searchList      *tview.List

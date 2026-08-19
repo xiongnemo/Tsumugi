@@ -368,6 +368,8 @@ const (
 
 	KeyStatusForwarded        = "status.forwarded"
 	KeyStatusForwardNothing   = "status.forward_nothing"
+	KeyStatusForwardNoTarget  = "status.forward_no_target"
+	KeyStatusForwardingTo     = "status.forwarding_to"
 	KeyStatusMarkedForForward = "status.marked_for_forward"
 	KeyStatusUnmarked         = "status.unmarked"
 	KeyStatusMarkedCount      = "status.marked_count"

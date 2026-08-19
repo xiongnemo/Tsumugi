@@ -381,5 +381,7 @@
   "ui.footer_forward_plain": "F forward w/o author",
   "ui.footer_clear_marks": "Esc clear",
   "ui.footer_marked_count": "%d marked",
-  "ui.footer_search_next": "n/N results"
+  "ui.footer_search_next": "n/N results",
+  "status.forward_no_target": "No matching destination - clear the filter.",
+  "status.forwarding_to": "Forwarding %d message(s) to %s..."
 }

@@ -11,6 +11,12 @@ import (
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
 
+// forwardTarget is one picker row destination.
+type forwardTarget struct {
+	Key   string
+	Title string
+}
+
 const (
 	// forwardPickerRows caps how many destinations are listed at once. An account with thousands
 	// of dialogs would otherwise build a list nobody scrolls; the filter is the way to reach the
@@ -140,45 +146,83 @@ func (a *App) closeForwardPicker() {
 }
 
 // fillForwardList rebuilds the destination rows for a filter string.
+//
+// Saved Messages is pinned first only while the filter is empty, or when the filter is aiming at
+// it. Pinning it unconditionally meant a filter typed at some other chat could leave Saved
+// Messages as row 0 and therefore highlighted, so Enter forwarded there instead, and nothing on
+// screen said where the messages had gone.
 func (a *App) fillForwardList(filter string) {
 	if a.forwardList == nil {
 		return
 	}
 	a.forwardList.Clear()
+	a.forwardTargets = a.forwardTargets[:0]
 	needle := strings.ToLower(strings.TrimSpace(filter))
 
-	// Saved Messages is pinned first and targets a sentinel, so forwarding to yourself works
-	// before any dialog sync has stored the self peer.
-	if needle == "" || strings.Contains(strings.ToLower(i18n.T(i18n.KeyForwardSavedMessages)), needle) {
-		a.forwardList.AddItem(i18n.T(i18n.KeyForwardSavedMessages), telegram.SavedMessagesTarget, 0, nil)
+	saved := i18n.T(i18n.KeyForwardSavedMessages)
+	if needle == "" {
+		// The convenience default, and it needs no stored peer, so it leads when nothing has
+		// been typed.
+		a.addForwardRow(saved, telegram.SavedMessagesTarget, saved)
+		a.appendForwardChats(needle, false)
+		return
 	}
-	rows := 0
+	// With a filter, real chats outrank Saved Messages unconditionally. Ranking cannot be made
+	// unambiguous — "sa" is a legitimate prefix of both "Saved Messages" and a chat called
+	// "Saved team chat" — so the tie is broken by intent: someone who typed a filter is looking
+	// for a conversation, not for the one destination that is always one keystroke away.
+	// Prefix matches lead, because typing a name means that name.
+	a.appendForwardChats(needle, true)
+	a.appendForwardChats(needle, false)
+	if strings.Contains(strings.ToLower(saved), needle) {
+		a.addForwardRow(saved, telegram.SavedMessagesTarget, saved)
+	}
+}
+
+// appendForwardChats adds matching chats, either the prefix matches or the rest.
+func (a *App) appendForwardChats(needle string, prefixOnly bool) {
 	for _, chat := range a.allChats {
 		if chat.ID == a.forwardSource {
 			continue
 		}
-		// Same predicate as applySearch: a second matching semantic for the same kind of
-		// filtering would just be surprising.
-		if needle != "" && !strings.Contains(strings.ToLower(chat.Title+" "+chat.Subtitle), needle) {
-			continue
+		if len(a.forwardTargets) >= forwardPickerRows {
+			return
 		}
-		a.forwardList.AddItem(render.ChatRow(chat, forwardPickerTitleWidth), chat.ID, 0, nil)
-		rows++
-		if rows >= forwardPickerRows {
-			break
+		if needle != "" {
+			if !strings.Contains(strings.ToLower(chat.Title+" "+chat.Subtitle), needle) {
+				continue
+			}
+			if strings.HasPrefix(strings.ToLower(chat.Title), needle) != prefixOnly {
+				continue
+			}
 		}
+		a.addForwardRow(render.ChatRow(chat, forwardPickerTitleWidth), chat.ID, chat.Title)
 	}
+}
+
+// addForwardRow keeps the visible row and its destination in step.
+//
+// The destination and its display name live alongside the list rather than in the row secondary
+// text, which both leaked internal peer keys like "channel:600" into the UI and left no way to
+// name the destination back to the user.
+func (a *App) addForwardRow(label, target, title string) {
+	a.forwardList.AddItem(label, "", 0, nil)
+	a.forwardTargets = append(a.forwardTargets, forwardTarget{Key: target, Title: title})
 }
 
 // commitForwardPick sends the marked messages to the highlighted destination.
 func (a *App) commitForwardPick() {
-	if a.forwardList == nil || a.forwardList.GetItemCount() == 0 {
+	if a.forwardList == nil {
 		return
 	}
-	_, target := a.forwardList.GetItemText(a.forwardList.GetCurrentItem())
-	if target == "" {
+	index := a.forwardList.GetCurrentItem()
+	if index < 0 || index >= len(a.forwardTargets) {
+		// Previously a silent return, which is indistinguishable from a dead key: a filter that
+		// matched nothing looked exactly like Enter not working.
+		a.setStatusMsg(i18n.KeyStatusForwardNoTarget)
 		return
 	}
+	target := a.forwardTargets[index]
 	ids := a.messages.MarkedIDs()
 	if len(ids) == 0 {
 		a.setStatusMsg(i18n.KeyStatusNothingMarked)
@@ -189,9 +233,12 @@ func (a *App) commitForwardPick() {
 		Kind:              telegram.CommandForwardMessages,
 		PeerKey:           a.forwardSource,
 		ForwardIDs:        ids,
-		ForwardTarget:     target,
+		ForwardTarget:     target.Key,
 		ForwardDropAuthor: a.forwardDropAuthor,
 	}
+	// Naming the destination is the point. The old status reported only a count, so a forward
+	// that landed somewhere unintended was indistinguishable from one that worked.
+	a.setStatusMsg(i18n.KeyStatusForwardingTo, len(ids), target.Title)
 	// Clearing here rather than in the viewport: it is App that knows a forward was actually
 	// requested, and openChat's two replaces must not be able to wipe a set being built.
 	a.messages.ClearMarks()

@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"github.com/nemo/Tsumugi/internal/i18n"
 	"github.com/nemo/Tsumugi/internal/render"
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
@@ -179,12 +181,11 @@ func TestForwardPickerOffersSavedMessagesFirst(t *testing.T) {
 
 	app.fillForwardList("")
 
-	if app.forwardList.GetItemCount() < 2 {
-		t.Fatalf("rows = %d, want Saved Messages plus at least one chat", app.forwardList.GetItemCount())
+	if len(app.forwardTargets) < 2 {
+		t.Fatalf("rows = %d, want Saved Messages plus at least one chat", len(app.forwardTargets))
 	}
-	_, target := app.forwardList.GetItemText(0)
-	if target != telegram.SavedMessagesTarget {
-		t.Fatalf("first row targets %q, want the Saved Messages sentinel", target)
+	if app.forwardTargets[0].Key != telegram.SavedMessagesTarget {
+		t.Fatalf("first row targets %q, want the Saved Messages sentinel", app.forwardTargets[0].Key)
 	}
 }
 
@@ -201,8 +202,8 @@ func TestForwardPickerExcludesTheSourceChat(t *testing.T) {
 
 	app.fillForwardList("")
 
-	for i := 0; i < app.forwardList.GetItemCount(); i++ {
-		if _, target := app.forwardList.GetItemText(i); target == "chat:1" {
+	for _, target := range app.forwardTargets {
+		if target.Key == "chat:1" {
 			t.Fatal("the source chat should not be offered as a destination")
 		}
 	}
@@ -220,9 +221,8 @@ func TestForwardPickerFilters(t *testing.T) {
 	app.fillForwardList("bob")
 
 	targets := map[string]bool{}
-	for i := 0; i < app.forwardList.GetItemCount(); i++ {
-		_, target := app.forwardList.GetItemText(i)
-		targets[target] = true
+	for _, target := range app.forwardTargets {
+		targets[target.Key] = true
 	}
 	if targets["user:2"] {
 		t.Fatal("Alice should be filtered out")
@@ -381,5 +381,112 @@ func drainForward(cmds <-chan telegram.Command) *telegram.Command {
 		default:
 			return nil
 		}
+	}
+}
+
+// The bug this pins: Saved Messages used to be pinned at row 0 unconditionally, so a filter aimed
+// at some other chat could leave it highlighted and Enter forwarded there instead — with nothing
+// on screen naming the destination, that is indistinguishable from the forward not working.
+func TestForwardPickerFilterDoesNotLeaveSavedMessagesSelected(t *testing.T) {
+	app := newSuggestionTestApp()
+	app.allChats = []telegram.Chat{
+		{ID: "chat:9", Title: "Saved team chat", Subtitle: "group"},
+	}
+	app.forwardList = tviewListForTest()
+	app.forwardSource = "chat:1"
+
+	// "sa" is a substring of both "Saved Messages" and the chat title.
+	app.fillForwardList("sa")
+
+	if len(app.forwardTargets) == 0 {
+		t.Fatal("no rows for a filter that matches a chat")
+	}
+	if app.forwardTargets[0].Key == telegram.SavedMessagesTarget {
+		t.Fatalf("row 0 is Saved Messages for filter %q; the chat the user is aiming at must win", "sa")
+	}
+}
+
+// Typing a chat name means that chat, not whatever else contains the same letters later on.
+func TestForwardPickerPrefersPrefixMatches(t *testing.T) {
+	app := newSuggestionTestApp()
+	app.allChats = []telegram.Chat{
+		{ID: "chat:8", Title: "Not the team", Subtitle: "group"},
+		{ID: "chat:9", Title: "Team standup", Subtitle: "group"},
+	}
+	app.forwardList = tviewListForTest()
+	app.forwardSource = "chat:1"
+
+	app.fillForwardList("team")
+
+	if len(app.forwardTargets) != 2 {
+		t.Fatalf("targets = %d, want both matches", len(app.forwardTargets))
+	}
+	if app.forwardTargets[0].Key != "chat:9" {
+		t.Fatalf("row 0 = %q, want the prefix match chat:9", app.forwardTargets[0].Key)
+	}
+}
+
+// Peer keys used to be stored in the visible secondary text, which leaked "channel:600" into the UI.
+func TestForwardPickerDoesNotShowPeerKeys(t *testing.T) {
+	app := newSuggestionTestApp()
+	app.allChats = []telegram.Chat{{ID: "channel:600", Title: "Target", Subtitle: "group"}}
+	app.forwardList = tviewListForTest()
+	app.forwardSource = "chat:1"
+
+	app.fillForwardList("")
+
+	for i := 0; i < app.forwardList.GetItemCount(); i++ {
+		main, secondary := app.forwardList.GetItemText(i)
+		if strings.Contains(main+secondary, "channel:600") {
+			t.Fatalf("row %d exposes the peer key: %q / %q", i, main, secondary)
+		}
+	}
+}
+
+// A filter matching nothing used to return silently, which looked exactly like a dead Enter key.
+func TestCommitForwardPickWithNoMatchesSaysSo(t *testing.T) {
+	app, cmds := newSendTestApp()
+	app.messages.SetRect(0, 0, 40, 12)
+	app.messages.SetMessages(readTestMessages("chat:1", 10, 11))
+	app.messages.SelectByID("11")
+	app.messages.ToggleMark()
+	app.allChats = []telegram.Chat{{ID: "user:2", Title: "Alice", Subtitle: "private"}}
+	app.forwardList = tviewListForTest()
+	app.forwardSource = "chat:1"
+	app.fillForwardList("zzzznomatch")
+
+	app.commitForwardPick()
+
+	if got := drainForward(cmds); got != nil {
+		t.Fatalf("sent %+v, want nothing with no destination", got)
+	}
+	if app.lastStatusMsg.Key != i18n.KeyStatusForwardNoTarget {
+		t.Fatalf("status = %q, want an explanation rather than silence", app.lastStatusMsg.Key)
+	}
+}
+
+// The destination has to be named back, or a forward that lands somewhere unintended is
+// indistinguishable from one that worked.
+func TestCommitForwardPickNamesTheDestination(t *testing.T) {
+	app, _ := newSendTestApp()
+	giveTestAppARoot(app)
+	app.messages.SetRect(0, 0, 40, 12)
+	app.messages.SetMessages(readTestMessages("chat:1", 10, 11))
+	app.messages.SelectByID("11")
+	app.messages.ToggleMark()
+	app.allChats = []telegram.Chat{{ID: "chat:9", Title: "Team standup", Subtitle: "group"}}
+	app.forwardList = tviewListForTest()
+	app.forwardSource = "chat:1"
+	app.fillForwardList("team")
+
+	app.commitForwardPick()
+
+	if app.foregroundStatusMsg.Key != i18n.KeyStatusForwardingTo && app.lastStatusMsg.Key != i18n.KeyStatusForwardingTo {
+		t.Fatalf("status keys = %q / %q, want the forwarding-to message",
+			app.foregroundStatusMsg.Key, app.lastStatusMsg.Key)
+	}
+	rendered := app.lastStatusMsg.String() + app.foregroundStatusMsg.String()
+	if !strings.Contains(rendered, "Team standup") {
+		t.Fatalf("status %q does not name the destination", rendered)
 	}
 }

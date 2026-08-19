@@ -62,6 +62,8 @@ type GotdClient struct {
 	typingSentAt         map[string]time.Time
 	// typingSend replaces the MessagesSetTyping call in tests.
 	typingSend func(context.Context, *tg.MessagesSetTypingRequest) (bool, error)
+	// forwardSend replaces the MessagesForwardMessages call in tests.
+	forwardSend func(context.Context, *tg.MessagesForwardMessagesRequest) (tg.UpdatesClass, error)
 }
 
 type pendingMessage struct {

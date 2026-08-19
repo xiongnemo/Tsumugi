@@ -146,8 +146,12 @@ func (c *GotdClient) forwardMessages(ctx context.Context, accountID string, api 
 		ToPeer:     to,
 		DropAuthor: cmd.ForwardDropAuthor,
 	}
+	send := c.forwardSend
+	if send == nil {
+		send = api.MessagesForwardMessages
+	}
 	updates, err := retryFloodWait(ctx, defaultMaxFloodWaits, "forwarding messages", func(ctx context.Context) (tg.UpdatesClass, error) {
-		return api.MessagesForwardMessages(ctx, req)
+		return send(ctx, req)
 	})
 	if err != nil {
 		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: cmd.PeerKey, Error: fmt.Errorf("forward messages: %w", err)})
