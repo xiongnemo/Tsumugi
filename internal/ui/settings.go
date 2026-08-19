@@ -2,6 +2,8 @@ package ui
 
 import (
 	"context"
+	"strconv"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -99,6 +101,16 @@ func (a *App) settingsGeneralForm(overlay *settingsOverlay) *tview.Form {
 	form.AddDropDown(i18n.T(i18n.KeySettingsLanguage), []string{"English (en)", "中文 (zh)"}, localeIndex, nil).
 		AddCheckbox(i18n.T(i18n.KeySettingsInlineAnim), a.settings.InlineAnim, nil).
 		AddCheckbox(i18n.T(i18n.KeySettingsJumpUnread), a.settings.JumpToFirstUnread, nil).
+		AddInputField(i18n.T(i18n.KeySettingsRetention), strconv.Itoa(a.settings.RetentionDays), 6,
+			func(text string, _ rune) bool {
+				// Digits only: the field means a number of days, and 0 means keep everything.
+				for _, r := range text {
+					if r < '0' || r > '9' {
+						return false
+					}
+				}
+				return len(text) <= 5
+			}, nil).
 		AddButton(i18n.T(i18n.KeySettingsSave), func() {
 			dropdown := form.GetFormItem(0).(*tview.DropDown)
 			_, localeText := dropdown.GetCurrentOption()
@@ -108,6 +120,14 @@ func (a *App) settingsGeneralForm(overlay *settingsOverlay) *tview.Form {
 			}
 			inlineAnim := form.GetFormItem(1).(*tview.Checkbox).IsChecked()
 			jumpUnread := form.GetFormItem(2).(*tview.Checkbox).IsChecked()
+			// Left at the stored value when the field is blank, rather than silently becoming
+			// "keep everything" because someone cleared it mid-edit.
+			retentionDays := a.settings.RetentionDays
+			if raw := strings.TrimSpace(form.GetFormItem(3).(*tview.InputField).GetText()); raw != "" {
+				if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
+					retentionDays = parsed
+				}
+			}
 			// Rebuilt as a literal, so every field has to be carried across explicitly:
 			// omitting one silently resets the user's choice whenever they touch any other
 			// General setting.
@@ -116,6 +136,7 @@ func (a *App) settingsGeneralForm(overlay *settingsOverlay) *tview.Form {
 				InlineAnim:        inlineAnim,
 				OutgoingLayout:    a.settings.OutgoingLayout,
 				JumpToFirstUnread: jumpUnread,
+				RetentionDays:     retentionDays,
 			}
 			if err := next.Save(context.Background(), a.db); err != nil {
 				a.setSettingsStatus("[red]" + err.Error())

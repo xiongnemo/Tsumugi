@@ -390,5 +390,6 @@
   "status.loading_newer": "Loading newer messages...",
   "status.newer_loaded": "Loaded %d newer messages.",
   "ui.footer_latest": "G latest",
-  "ui.footer_search_global": "G search all"
+  "ui.footer_search_global": "G search all",
+  "settings.retention": "Keep history (days, 0 = forever):"
 }

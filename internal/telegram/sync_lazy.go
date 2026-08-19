@@ -94,8 +94,19 @@ func (c *GotdClient) lazyBackfill(ctx context.Context, accountID string, api *tg
 		// seconds to choose twenty rows. The horizon is what makes this terminate at all — see
 		// RecentPeersForBackfill.
 		now := time.Now().UTC()
+		depth := c.effectiveBackfillHorizon(ctx)
+		if depth == 0 {
+			// Retention is short enough that prefetching would only feed the pruner. On-demand
+			// loading still covers scrolling back. Re-checked on a timer so changing the setting
+			// takes effect without a restart.
+			sendBackgroundState(ctx, events, BackgroundState{Kind: BackgroundIdle})
+			if !sleepCtx(ctx, 5*time.Minute) {
+				return
+			}
+			continue
+		}
 		cutoff := now.Add(-recentWindow)
-		horizon := now.Add(-backfillHorizon())
+		horizon := now.Add(-depth)
 		recent, err := c.store.RecentPeersForBackfill(ctx, accountID, cutoff, horizon, maxPeersPerRound)
 		if err != nil {
 			select {
@@ -261,10 +272,12 @@ func (c *GotdClient) startSyncWorkers(ctx context.Context, accountID string, api
 	if c.cfg.SyncMode == config.SyncFull {
 		go c.backgroundSync(ctx, accountID, api, events)
 		go c.backfillHistory(ctx, accountID, api, events)
+		// Full sync deliberately keeps everything, so retention would undo its whole point.
 		return
 	}
 	go c.syncDialogMetadataOnly(ctx, accountID, api, events)
 	go c.lazyBackfill(ctx, accountID, api, events)
+	go c.pruneOldMessages(ctx, accountID, events)
 }
 
 // defaultBackfillHorizon is how far back the background backfill tries to reach.

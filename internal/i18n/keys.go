@@ -366,6 +366,7 @@ const (
 	KeyTypingMany             = "typing.many"
 
 	KeySettingsJumpUnread = "settings.jump_unread"
+	KeySettingsRetention  = "settings.retention"
 
 	KeyUIUnreadDivider    = "ui.unread_divider"
 	KeyUIWindowedHistory  = "ui.windowed_history"

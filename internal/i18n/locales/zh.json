@@ -390,5 +390,6 @@
   "status.loading_newer": "正在加载更新的消息…",
   "status.newer_loaded": "已加载 %d 条更新的消息。",
   "ui.footer_latest": "G 最新",
-  "ui.footer_search_global": "G 全局搜索"
+  "ui.footer_search_global": "G 全局搜索",
+  "settings.retention": "保留历史（天数，0 = 永久）:"
 }
