@@ -172,13 +172,20 @@ func (c *GotdClient) forwardMessages(ctx context.Context, accountID string, api 
 		return
 	}
 
-	// Echo into the destination only when it is the chat on screen; forwarding elsewhere is
-	// confirmed by the status line, and the messages arrive through the normal update path.
-	targetKey := cmd.ForwardTarget
-	if targetKey != SavedMessagesTarget && c.isFocusedPeer(targetKey) {
+	// Always recorded, whatever is on screen. The copies come back in this method's own reply
+	// rather than through the update stream, so nothing else will ever deliver them: gating this
+	// on the destination being focused meant a forward elsewhere was never written down, and the
+	// message only appeared after a later history fetch happened to pick it up.
+	//
+	// Plain sendEvent, not sendFocusedEvent, for the same reason drafts use it: App.appendMessage
+	// already drops anything whose ChatID is not the open chat, so filtering here only loses the
+	// storage write.
+	if targetKey := c.storageKeyForTarget(ctx, accountID, cmd.ForwardTarget); targetKey != "" {
 		if echoed := c.messagesFromSendUpdates(ctx, api, accountID, targetKey, "", 0, updates); len(echoed) > 0 {
-			if err := c.store.SaveMessages(ctx, echoed); err == nil {
-				c.sendFocusedEvent(ctx, events, targetKey, Event{
+			if err := c.store.SaveMessages(ctx, echoed); err != nil {
+				debuglog.Error("forward_echo_save", err, map[string]any{"peer_key": targetKey})
+			} else {
+				sendEvent(ctx, events, Event{
 					Kind:     EventMessages,
 					PeerKey:  targetKey,
 					Messages: c.telegramMessages(ctx, accountID, echoed),

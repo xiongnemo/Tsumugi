@@ -3,6 +3,8 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/gotd/td/tg"
 
@@ -88,4 +90,39 @@ func describeInputPeer(p tg.InputPeerClass) map[string]any {
 	default:
 		return map[string]any{"type": fmt.Sprintf("%T", p)}
 	}
+}
+
+// storageKeyForTarget maps a forward destination to the peer key its messages are stored under.
+//
+// SavedMessagesTarget is a sentinel: it resolves to InputPeerSelf for the RPC, which needs no
+// stored peer. Storage and the UI are keyed by peer, though, so an echo into Saved Messages needs
+// the real self:<id> key or it is never written down.
+func (c *GotdClient) storageKeyForTarget(ctx context.Context, accountID, target string) string {
+	if target != SavedMessagesTarget {
+		return target
+	}
+	id := telegramIDFromAccountID(accountID)
+	if id == 0 {
+		return ""
+	}
+	if c.store != nil {
+		if key, ok, err := c.store.PeerKeyForTelegramID(ctx, accountID, id, "self"); err == nil && ok {
+			return key
+		}
+	}
+	// Not synced yet; the key is deterministic, so the row can be created now and matched later.
+	return peerKey("self", id)
+}
+
+// telegramIDFromAccountID pulls the numeric id out of an account id such as "user:123".
+func telegramIDFromAccountID(accountID string) int64 {
+	idx := strings.LastIndexByte(accountID, ':')
+	if idx < 0 {
+		return 0
+	}
+	id, err := strconv.ParseInt(accountID[idx+1:], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
 }
