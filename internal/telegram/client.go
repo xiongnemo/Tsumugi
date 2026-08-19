@@ -2106,16 +2106,33 @@ func (c *GotdClient) telegramMessages(ctx context.Context, accountID string, mes
 func inputPeer(p storage.Peer) (tg.InputPeerClass, error) {
 	switch p.Kind {
 	case "self":
+		// InputPeerSelf needs no hash, which is why the self peer is stored with none.
 		return &tg.InputPeerSelf{}, nil
 	case "user":
+		if p.AccessHash == 0 {
+			return nil, missingAccessHashError(p)
+		}
 		return &tg.InputPeerUser{UserID: p.ID, AccessHash: p.AccessHash}, nil
 	case "chat":
+		// Basic groups are addressed by id alone; there is no hash to miss.
 		return &tg.InputPeerChat{ChatID: p.ID}, nil
 	case "channel":
+		if p.AccessHash == 0 {
+			return nil, missingAccessHashError(p)
+		}
 		return &tg.InputPeerChannel{ChannelID: p.ID, AccessHash: p.AccessHash}, nil
 	default:
 		return nil, fmt.Errorf("unsupported peer kind %q", p.Kind)
 	}
+}
+
+// missingAccessHashError names the real problem.
+//
+// Sending the request anyway earns a bare PEER_ID_INVALID from Telegram, which says nothing about
+// which peer or why. A dialog sync re-learns the hash, and the guard in SavePeers stops it being
+// lost again, so a restart is a genuine fix rather than a shrug.
+func missingAccessHashError(p storage.Peer) error {
+	return fmt.Errorf("no access hash stored for %s (%s); restart to re-sync dialogs", p.Key, p.Title)
 }
 
 func peer(accountID, kind string, id, accessHash int64, title, username string) storage.Peer {
@@ -2507,10 +2524,13 @@ func mergePeerActivity(existing, activity storage.Peer) storage.Peer {
 		out.Title = existing.Title
 		out.Username = existing.Username
 		out.Subtitle = existing.Subtitle
-		if out.AccessHash == 0 {
-			out.AccessHash = existing.AccessHash
-		}
 		out.Contact = existing.Contact
+	}
+	// Outside the placeholder branch on purpose: peerFromRef yields a real title but a zero
+	// access hash whenever the update carried no entity for the peer, and losing the hash breaks
+	// every subsequent RPC on it.
+	if out.AccessHash == 0 {
+		out.AccessHash = existing.AccessHash
 	}
 	out.Pinned = existing.Pinned
 	out.PinnedOrder = existing.PinnedOrder

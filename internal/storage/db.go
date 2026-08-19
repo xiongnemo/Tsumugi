@@ -304,7 +304,11 @@ func (db *DB) SavePeers(ctx context.Context, peers []Peer) error {
 			ON CONFLICT(account_id, key) DO UPDATE SET
 				kind = excluded.kind,
 				telegram_id = excluded.telegram_id,
-				access_hash = excluded.access_hash,
+				-- Never overwritten with zero. An access hash cannot be re-derived locally, so a
+				-- peer built from an update that carried no entity for it would otherwise wipe
+				-- the stored credential and make every later RPC on that peer fail with
+				-- PEER_ID_INVALID.
+				access_hash = CASE WHEN excluded.access_hash != 0 THEN excluded.access_hash ELSE peers.access_hash END,
 				title = excluded.title,
 				username = excluded.username,
 				subtitle = excluded.subtitle,
