@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	mrand "math/rand"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,9 +91,12 @@ func (c *GotdClient) lazyBackfill(ctx context.Context, accountID string, api *tg
 		}
 		// Filtered and limited in SQL rather than by loading every peer and discarding almost
 		// all of it: at a few thousand dialogs that was tens of megabytes of garbage every few
-		// seconds to choose twenty rows.
-		cutoff := time.Now().UTC().Add(-recentWindow)
-		recent, err := c.store.RecentPeersForBackfill(ctx, accountID, cutoff, maxPeersPerRound)
+		// seconds to choose twenty rows. The horizon is what makes this terminate at all — see
+		// RecentPeersForBackfill.
+		now := time.Now().UTC()
+		cutoff := now.Add(-recentWindow)
+		horizon := now.Add(-backfillHorizon())
+		recent, err := c.store.RecentPeersForBackfill(ctx, accountID, cutoff, horizon, maxPeersPerRound)
 		if err != nil {
 			select {
 			case <-ctx.Done():
@@ -259,4 +265,25 @@ func (c *GotdClient) startSyncWorkers(ctx context.Context, accountID string, api
 	}
 	go c.syncDialogMetadataOnly(ctx, accountID, api, events)
 	go c.lazyBackfill(ctx, accountID, api, events)
+}
+
+// defaultBackfillHorizon is how far back the background backfill tries to reach.
+//
+// It needs to be a horizon rather than "as far as possible": without one the backfill walked every
+// recent peer's history backwards a page per round indefinitely, which on a real account meant six
+// million stored messages and a 3.7GB database inside a day. Thirty days covers "scroll up and it is
+// already there" for the chats you actually read, which is what offline history is for.
+const defaultBackfillHorizon = 30 * 24 * time.Hour
+
+// backfillHorizon is the horizon, overridable for people who want more or less offline history.
+func backfillHorizon() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("TSUMUGI_BACKFILL_DAYS"))
+	if raw == "" {
+		return defaultBackfillHorizon
+	}
+	days, err := strconv.Atoi(raw)
+	if err != nil || days <= 0 {
+		return defaultBackfillHorizon
+	}
+	return time.Duration(days) * 24 * time.Hour
 }

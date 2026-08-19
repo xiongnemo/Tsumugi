@@ -97,6 +97,9 @@ behaviour you may want to change.
   history, and lazy startup sync (dialog metadata plus optional recent-peer
   backfill). Set `TSUMUGI_SYNC_MODE=full` to restore the older all-peer history
   sweep on startup.
+- Background backfill reaches back 30 days for recently active chats and then stops.
+  `TSUMUGI_BACKFILL_DAYS` changes the horizon. Without one it never terminated: on a real
+  account it stored six million messages and a 3.7 GB database in about a day.
 - Single-line status bar: connection (left), foreground network activity
   (center), background tasks (right, only when running). Chat summary and
   history gap hints appear in the message pane title.

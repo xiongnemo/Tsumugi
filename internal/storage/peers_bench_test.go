@@ -82,11 +82,13 @@ func BenchmarkRecentPeersForBackfill(b *testing.B) {
 	db := benchDB(b)
 	seedPeers(b, db, 5000)
 	ctx := context.Background()
-	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
+	now := time.Now().UTC()
+	cutoff := now.Add(-7 * 24 * time.Hour)
+	horizon := now.Add(-30 * 24 * time.Hour)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		peers, err := db.RecentPeersForBackfill(ctx, "acct", cutoff, 20)
+		peers, err := db.RecentPeersForBackfill(ctx, "acct", cutoff, horizon, 20)
 		if err != nil || len(peers) != 20 {
 			b.Fatalf("err=%v n=%d", err, len(peers))
 		}

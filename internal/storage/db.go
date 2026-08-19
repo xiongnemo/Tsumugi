@@ -387,28 +387,41 @@ func (db *DB) ListPeers(ctx context.Context, accountID string) ([]Peer, error) {
 	return scanPeerRows(rows, accountID, 64)
 }
 
-// RecentPeersForBackfill returns at most limit peers active since the cutoff, newest first.
+// RecentPeersForBackfill returns at most limit peers that are active since cutoff and do not yet
+// hold history reaching back to horizon, newest first.
 //
-// The background backfill used to call ListPeers every round and throw almost all of it away: on an
-// account with a few thousand dialogs that is tens of megabytes of garbage every few seconds, for
-// the sake of choosing twenty rows. Filtering and limiting in SQL turns the whole round into a
-// bounded read.
+// Two problems this query exists to solve.
+//
+// The backfill used to call ListPeers every round and throw almost all of it away: on an account
+// with a few thousand dialogs that is tens of megabytes of garbage every few seconds to choose
+// twenty rows. Filtering and limiting in SQL makes a round a bounded read.
+//
+// More importantly it now has a stopping condition. The backfill had no notion of far enough, so it
+// walked every recent peer's history backwards a page at a time forever: on a real account that
+// produced six million messages across eight hundred dialogs and a 3.7GB database in about a day,
+// almost none of which will ever be read. The horizon predicate is "we have not yet stored anything
+// older than this", so a peer drops out of the candidate set the moment its stored history reaches
+// back far enough, and a steady state does no work at all.
 //
 // last_message_at is RFC3339Nano text, which is not perfectly ordered as a string because trailing
-// zeros in the fraction are dropped. That only ever mis-ranks peers within the same second, and
-// top_message_id breaks those ties, so it does not matter for choosing what to backfill next — but
-// it is why this is not the query to reach for if exact ordering ever matters.
-func (db *DB) RecentPeersForBackfill(ctx context.Context, accountID string, cutoff time.Time, limit int) ([]Peer, error) {
+// zeros in the fraction are dropped. That only mis-ranks peers within the same second, which does
+// not matter for choosing what to backfill next — but it is why this is not the query to reach for
+// if exact ordering ever does matter.
+func (db *DB) RecentPeersForBackfill(ctx context.Context, accountID string, cutoff, horizon time.Time, limit int) ([]Peer, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
 	rows, err := db.sql.QueryContext(ctx, `
 		SELECT `+peerColumns+`
-		FROM peers
-		WHERE account_id = ? AND last_message_at != '' AND last_message_at >= ?
-		ORDER BY last_message_at DESC, top_message_id DESC
+		FROM peers p
+		WHERE p.account_id = ? AND p.last_message_at != '' AND p.last_message_at >= ?
+			AND NOT EXISTS (
+				SELECT 1 FROM messages m
+				WHERE m.account_id = p.account_id AND m.peer_key = p.key AND m.date <= ?
+			)
+		ORDER BY p.last_message_at DESC, p.top_message_id DESC
 		LIMIT ?
-	`, accountID, formatTime(cutoff), limit)
+	`, accountID, formatTime(cutoff), formatTime(horizon), limit)
 	if err != nil {
 		return nil, err
 	}
