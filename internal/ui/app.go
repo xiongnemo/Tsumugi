@@ -1161,6 +1161,8 @@ func (a *App) switchFocusPrevious() {
 }
 
 func (a *App) updateFocusStyle() {
+	// G means different things in different panes, and the footer says which.
+	defer a.refreshFooter()
 	focus := a.app.GetFocus()
 	if focus == a.folders {
 		a.folders.SetSelectedBackgroundColor(tcell.ColorDarkSlateGray).SetSelectedTextColor(tcell.ColorWhite)

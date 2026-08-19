@@ -90,3 +90,66 @@ func TestFooterLinesContainNoEmbeddedNewlines(t *testing.T) {
 		t.Errorf("FooterStatus contains a newline: %q", status)
 	}
 }
+
+// G jumps to the latest message in the message pane and opens a global search everywhere else. A
+// hint naming the wrong one is worse than no hint, which is why the footer is focus-aware.
+func TestFooterKeysDescribeGPerPane(t *testing.T) {
+	inMessages := FooterKeys(FooterState{MessagePaneFocused: true})
+	elsewhere := FooterKeys(FooterState{})
+
+	if !strings.Contains(inMessages, "G latest") {
+		t.Fatalf("message pane line = %q, want G described as jumping to the latest", inMessages)
+	}
+	if strings.Contains(inMessages, "G search all") {
+		t.Fatalf("message pane line = %q, must not describe G as search", inMessages)
+	}
+	if !strings.Contains(elsewhere, "G search all") {
+		t.Fatalf("chat list line = %q, want G described as global search", elsewhere)
+	}
+}
+
+// The English base line is around 150 cells, so on the 80-column console the raw-terminal goal
+// targets it was clipped and half the hints were unreadable.
+func TestFooterKeysFitTheGivenWidth(t *testing.T) {
+	for _, width := range []int{40, 60, 80, 100, 200} {
+		line := FooterKeys(FooterState{Width: width, MessagePaneFocused: true})
+		if got := StringWidth(line); got > width {
+			t.Errorf("width %d: line is %d cells: %q", width, got, line)
+		}
+	}
+}
+
+// Whatever is dropped, the way out survives: a user who can read nothing else still needs quit.
+func TestFooterKeysAlwaysKeepQuitEvenWhenCramped(t *testing.T) {
+	for _, width := range []int{10, 20, 40, 80} {
+		for _, state := range []FooterState{{Width: width}, {Width: width, MarkedCount: 3}} {
+			if line := FooterKeys(state); !strings.Contains(line, "q quit") {
+				t.Errorf("width %d state %+v: %q has no quit hint", width, state, line)
+			}
+		}
+	}
+}
+
+// Hints are dropped from the least useful end, so a narrow line is a prefix of a wide one.
+func TestFooterKeysDropFromTheLeastUsefulEnd(t *testing.T) {
+	wide := FooterKeys(FooterState{Width: 300, MessagePaneFocused: true})
+	narrow := FooterKeys(FooterState{Width: 60, MessagePaneFocused: true})
+
+	if !strings.Contains(wide, "Tab focus") || !strings.Contains(narrow, "Tab focus") {
+		t.Fatalf("the most useful hint was dropped:\nwide=%q\nnarrow=%q", wide, narrow)
+	}
+	if strings.Contains(narrow, "? settings") {
+		t.Fatalf("narrow line %q kept a low-priority hint", narrow)
+	}
+}
+
+// Unknown width means the first draw has not happened yet; listing everything beats guessing.
+func TestFooterKeysListEverythingWithoutAWidth(t *testing.T) {
+	line := FooterKeys(FooterState{MessagePaneFocused: true})
+
+	for _, want := range []string{"Tab focus", "? settings", "q quit"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("line %q lacks %q when the width is unknown", line, want)
+		}
+	}
+}

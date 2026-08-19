@@ -355,8 +355,10 @@ screen tview is drawing.
 - `n` / `N`: next / previous search result (wraps)
 - `G`: search all chats (chat list / folders), or return to the latest messages (message pane)
 - The footer is two lines: keys on top, login mode / proxy / version below. The key line
-  changes with context — marking messages swaps it for the forwarding keys, and `n`/`N`
-  only appear once a search has results.
+  changes with context — marking messages swaps it for the forwarding keys, `n`/`N` only
+  appear once a search has results, and `G` is described as "latest" or "search all"
+  depending on which pane has focus. On a narrow terminal the least useful hints are
+  dropped rather than clipped, and `q quit` is never one of them.
 - `v`: mark/unmark the selected message for forwarding
 - `f` / `F`: forward marked messages (`F` drops the original author)
 - `End` / `G`: return to the latest messages while viewing older history

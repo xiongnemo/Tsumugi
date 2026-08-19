@@ -56,6 +56,8 @@ func (a *App) applyLayoutTier(width int) {
 	}
 	a.layoutTier = tier
 	a.layoutTierApplied = true
+	// A tier change resizes the right pane, so the number of hints that fit changes with it.
+	defer a.refreshFooter()
 	if a.root == nil || a.folders == nil || a.chats == nil {
 		return
 	}

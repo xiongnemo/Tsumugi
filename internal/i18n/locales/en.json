@@ -388,5 +388,7 @@
   "ui.preview_video_unsupported": "Video cannot be previewed inline in this terminal. Use Open media or Download media.",
   "ui.actions": "Actions",
   "status.loading_newer": "Loading newer messages...",
-  "status.newer_loaded": "Loaded %d newer messages."
+  "status.newer_loaded": "Loaded %d newer messages.",
+  "ui.footer_latest": "G latest",
+  "ui.footer_search_global": "G search all"
 }

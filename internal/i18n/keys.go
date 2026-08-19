@@ -144,6 +144,8 @@ const (
 	KeyUIFooterClearMarks        = "ui.footer_clear_marks"
 	KeyUIFooterMarkedCount       = "ui.footer_marked_count"
 	KeyUIFooterSearchNext        = "ui.footer_search_next"
+	KeyUIFooterLatest            = "ui.footer_latest"
+	KeyUIFooterSearchGlobal      = "ui.footer_search_global"
 	KeyUIFooterPinned            = "ui.footer_pinned"
 	KeyUIFooterSend              = "ui.footer_send"
 	KeyUIComposePlaceholder      = "ui.compose_placeholder"

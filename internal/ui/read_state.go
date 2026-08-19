@@ -191,6 +191,12 @@ func (a *App) refreshFooter() {
 		state.MarkedCount = a.messages.MarkedCount()
 	}
 	state.SearchHits = len(a.searchHits)
+	state.MessagePaneFocused = a.app != nil && a.messages != nil && a.app.GetFocus() == a.messages
+	// The footer sits in the right pane, so its own width is the one that matters, not the
+	// terminal's. Zero before the first draw, which FooterKeys reads as "list everything".
+	if _, _, w, _ := a.footer.GetInnerRect(); w > 0 {
+		state.Width = w
+	}
 	a.footer.SetText(render.FooterWithState(state, string(a.cfg.AuthMode), version.String(), a.cfg.Proxy))
 }
 
