@@ -33,8 +33,7 @@ func VideoPathMayAnimate(path string) bool {
 	if !videoContainerPath(path) {
 		return false
 	}
-	_, err := exec.LookPath("ffmpeg")
-	return err == nil
+	return ffmpegAvailable()
 }
 
 func videoFramesCached(path string) (*videoDecoded, bool) {
@@ -54,7 +53,9 @@ func VideoAnimatable(path string) bool {
 	if ok {
 		return len(d.frames) > 1
 	}
-	return true
+	// Reporting a known-bad path as animatable keeps AdvanceGIF returning true, which keeps the
+	// whole message list redrawing at 8Hz for an animation that will never appear.
+	return !decodeFailed(path)
 }
 
 // MP4Animatable reports whether path is an ffmpeg-decodable MP4 animation.
@@ -72,10 +73,23 @@ func ensureVideoDecodedAsync(path string) {
 	if _, ok := videoFramesCached(path); ok {
 		return
 	}
+	if decodeFailed(path) {
+		return
+	}
 	go func() {
-		_, _, _ = videoDecodeGrp.Do(path, func() (any, error) {
+		_, err, _ := videoDecodeGrp.Do(path, func() (any, error) {
 			return decodeVideoFrames(path)
 		})
+		// Recorded so the tick stops spawning ffmpeg for this file. A single-frame video counts
+		// as a failure for animation purposes: there is nothing to animate, and retrying forever
+		// costs a process per tick.
+		if err != nil {
+			markDecodeFailed(path)
+			return
+		}
+		if d, ok := videoFramesCached(path); !ok || len(d.frames) < 2 {
+			markDecodeFailed(path)
+		}
 	}()
 }
 
@@ -184,7 +198,8 @@ func animatedVideoANSI(path string, tick int, maxCols, maxRows int) string {
 		return RenderTerminalImage(d.frames[frame], maxCols, maxRows)
 	}
 	ensureVideoDecodedAsync(path)
-	return RenderTerminalPreview(path, maxCols, maxRows)
+	// Frames are absent, so this is a still and the tick cannot change it.
+	return stillFallbackANSI(path, maxCols, maxRows)
 }
 
 func animatedMP4ANSI(path string, tick int, maxCols, maxRows int) string {

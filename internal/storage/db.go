@@ -230,6 +230,11 @@ func (db *DB) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	// RecentPeersForBackfill orders without the pinned prefix, so idx_peers_dialog_order cannot
+	// serve it and SQLite would scan and sort the whole table on every backfill round.
+	if _, err := db.sql.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_peers_recent ON peers(account_id, last_message_at DESC, top_message_id DESC)`); err != nil {
+		return err
+	}
 	if _, err := db.sql.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_peers_dialog_order ON peers(account_id, pinned DESC, pinned_order ASC, last_message_at DESC, top_message_id DESC)`); err != nil {
 		return err
 	}
@@ -343,20 +348,12 @@ func (db *DB) SavePeers(ctx context.Context, peers []Peer) error {
 	return tx.Commit()
 }
 
-func (db *DB) ListPeers(ctx context.Context, accountID string) ([]Peer, error) {
-	rows, err := db.sql.QueryContext(ctx, `
-		SELECT key, kind, telegram_id, access_hash, title, username, subtitle, contact, last_preview, last_message_at,
+const peerColumns = `key, kind, telegram_id, access_hash, title, username, subtitle, contact, last_preview, last_message_at,
 			top_message_id, folder_id, folder_title, pinned, pinned_order, unread, read_outbox_max_id, history_min_id,
-			history_loaded_until, thumb_cache_key, updated_at, last_preview_key, last_preview_arg, read_inbox_max_id
-		FROM peers WHERE account_id = ?
-		ORDER BY pinned DESC, pinned_order ASC, last_message_at DESC, top_message_id DESC, title COLLATE NOCASE
-	`, accountID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+			history_loaded_until, thumb_cache_key, updated_at, last_preview_key, last_preview_arg, read_inbox_max_id`
 
-	var peers []Peer
+func scanPeerRows(rows *sql.Rows, accountID string, capacity int) ([]Peer, error) {
+	peers := make([]Peer, 0, capacity)
 	for rows.Next() {
 		var p Peer
 		var pinned, contact int
@@ -375,6 +372,48 @@ func (db *DB) ListPeers(ctx context.Context, accountID string) ([]Peer, error) {
 		peers = append(peers, p)
 	}
 	return peers, rows.Err()
+}
+
+func (db *DB) ListPeers(ctx context.Context, accountID string) ([]Peer, error) {
+	rows, err := db.sql.QueryContext(ctx, `
+		SELECT `+peerColumns+`
+		FROM peers WHERE account_id = ?
+		ORDER BY pinned DESC, pinned_order ASC, last_message_at DESC, top_message_id DESC, title COLLATE NOCASE
+	`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanPeerRows(rows, accountID, 64)
+}
+
+// RecentPeersForBackfill returns at most limit peers active since the cutoff, newest first.
+//
+// The background backfill used to call ListPeers every round and throw almost all of it away: on an
+// account with a few thousand dialogs that is tens of megabytes of garbage every few seconds, for
+// the sake of choosing twenty rows. Filtering and limiting in SQL turns the whole round into a
+// bounded read.
+//
+// last_message_at is RFC3339Nano text, which is not perfectly ordered as a string because trailing
+// zeros in the fraction are dropped. That only ever mis-ranks peers within the same second, and
+// top_message_id breaks those ties, so it does not matter for choosing what to backfill next — but
+// it is why this is not the query to reach for if exact ordering ever matters.
+func (db *DB) RecentPeersForBackfill(ctx context.Context, accountID string, cutoff time.Time, limit int) ([]Peer, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := db.sql.QueryContext(ctx, `
+		SELECT `+peerColumns+`
+		FROM peers
+		WHERE account_id = ? AND last_message_at != '' AND last_message_at >= ?
+		ORDER BY last_message_at DESC, top_message_id DESC
+		LIMIT ?
+	`, accountID, formatTime(cutoff), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanPeerRows(rows, accountID, limit)
 }
 
 func (db *DB) Peer(ctx context.Context, accountID, key string) (Peer, bool, error) {

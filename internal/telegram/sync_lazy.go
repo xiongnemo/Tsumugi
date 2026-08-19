@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	mrand "math/rand"
-	"sort"
 	"sync"
 	"time"
 
@@ -87,30 +86,18 @@ func (c *GotdClient) lazyBackfill(ctx context.Context, accountID string, api *tg
 			}
 			continue
 		}
-		peers, err := c.store.ListPeers(ctx, accountID)
-		if err != nil || len(peers) == 0 {
+		// Filtered and limited in SQL rather than by loading every peer and discarding almost
+		// all of it: at a few thousand dialogs that was tens of megabytes of garbage every few
+		// seconds to choose twenty rows.
+		cutoff := time.Now().UTC().Add(-recentWindow)
+		recent, err := c.store.RecentPeersForBackfill(ctx, accountID, cutoff, maxPeersPerRound)
+		if err != nil {
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(3 * time.Second):
 			}
 			continue
-		}
-		cutoff := time.Now().UTC().Add(-recentWindow)
-		var recent []storage.Peer
-		for _, p := range peers {
-			if p.LastMessageAt.After(cutoff) {
-				recent = append(recent, p)
-			}
-		}
-		sort.SliceStable(recent, func(i, j int) bool {
-			if recent[i].LastMessageAt.Equal(recent[j].LastMessageAt) {
-				return recent[i].TopMessageID > recent[j].TopMessageID
-			}
-			return recent[i].LastMessageAt.After(recent[j].LastMessageAt)
-		})
-		if len(recent) > maxPeersPerRound {
-			recent = recent[:maxPeersPerRound]
 		}
 		if len(recent) == 0 {
 			sendBackgroundState(ctx, events, BackgroundState{Kind: BackgroundIdle})

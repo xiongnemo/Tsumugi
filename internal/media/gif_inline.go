@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/gif"
 	"os"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sync/singleflight"
@@ -38,10 +39,22 @@ func ensureGIFDecodedAsync(path string) {
 	if _, ok := gifFramesCached(path); ok {
 		return
 	}
+	if decodeFailed(path) {
+		return
+	}
 	go func() {
-		_, _, _ = gifDecodeGrp.Do(path, func() (any, error) {
+		_, err, _ := gifDecodeGrp.Do(path, func() (any, error) {
 			return decodeGIFAllFrames(path)
 		})
+		if err != nil {
+			markDecodeFailed(path)
+			return
+		}
+		if d, ok := gifFramesCached(path); !ok || len(d.frames) < 2 {
+			// A single-frame GIF has nothing to animate; without this the optimistic "true"
+			// below keeps the list redrawing at 8Hz forever.
+			markDecodeFailed(path)
+		}
 	}()
 }
 
@@ -89,9 +102,10 @@ func AnimatedInlineANSI(path string, tick int, maxCols, maxRows int) string {
 		if ansi := animatedVideoANSI(path, tick, maxCols, maxRows); ansi != "" {
 			return ansi
 		}
-		return RenderTerminalPreview(path, maxCols, maxRows)
+		// No ffmpeg, so this is a still thumbnail and the tick cannot change it.
+		return stillFallbackANSI(path, maxCols, maxRows)
 	default:
-		return RenderTerminalPreview(path, maxCols, maxRows)
+		return stillFallbackANSI(path, maxCols, maxRows)
 	}
 }
 
@@ -106,7 +120,7 @@ func InlineAnimatable(path string) bool {
 		if d, ok := gifFramesCached(path); ok {
 			return len(d.frames) > 1
 		}
-		return true
+		return !decodeFailed(path)
 	case videoContainerPath(lower):
 		return VideoAnimatable(path)
 	default:
@@ -132,5 +146,31 @@ func animatedGIFANSI(path string, tick int, maxCols, maxRows int) string {
 		return RenderTerminalImage(d.frames[frame], maxCols, maxRows)
 	}
 	ensureGIFDecodedAsync(path)
-	return RenderTerminalPreview(path, maxCols, maxRows)
+	// Frames are still decoding; the placeholder still is the same on every tick until they land.
+	return stillFallbackANSI(path, maxCols, maxRows)
+}
+
+// stillFallbackANSI renders a still preview at the given size, cached.
+//
+// Every inline medium that cannot actually animate lands here — a video sticker with no ffmpeg
+// installed, or a GIF whose frames are still being decoded — and it is reached from the 120ms
+// animation tick, so it used to re-decode and re-resample the image eight times a second for every
+// such message on screen. The result does not depend on the tick, so it never needed recomputing:
+// measured at 2.4ms and 549KB per call, a screenful produced tens of megabytes per second of
+// garbage, and the collector turned that into a busy core.
+//
+// Keyed by size as well as path, because the same file is rendered at one size in the message list
+// and another in the detail preview.
+func stillFallbackANSI(path string, maxCols, maxRows int) string {
+	key := animCacheKey("still:"+strconv.Itoa(maxCols)+"x"+strconv.Itoa(maxRows), path)
+	if cached, ok := inlineAnimFrames.get(key); ok {
+		if ansi, ok := cached.(string); ok {
+			return ansi
+		}
+	}
+	ansi := RenderTerminalPreview(path, maxCols, maxRows)
+	if ansi != "" {
+		inlineAnimFrames.add(key, ansi, int64(len(ansi)))
+	}
+	return ansi
 }
