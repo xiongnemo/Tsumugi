@@ -4,9 +4,6 @@ import (
 	"context"
 	"fmt"
 	mrand "math/rand"
-	"os"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -277,26 +274,10 @@ func (c *GotdClient) startSyncWorkers(ctx context.Context, accountID string, api
 	}
 	go c.syncDialogMetadataOnly(ctx, accountID, api, events)
 	go c.lazyBackfill(ctx, accountID, api, events)
-	go c.pruneOldMessages(ctx, accountID, events)
+	go c.pruneOldMessages(ctx, accountID)
 }
 
-// defaultBackfillHorizon is how far back the background backfill tries to reach.
-//
-// It needs to be a horizon rather than "as far as possible": without one the backfill walked every
-// recent peer's history backwards a page per round indefinitely, which on a real account meant six
-// million stored messages and a 3.7GB database inside a day. Thirty days covers "scroll up and it is
-// already there" for the chats you actually read, which is what offline history is for.
-const defaultBackfillHorizon = 30 * 24 * time.Hour
-
-// backfillHorizon is the horizon, overridable for people who want more or less offline history.
-func backfillHorizon() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("TSUMUGI_BACKFILL_DAYS"))
-	if raw == "" {
-		return defaultBackfillHorizon
-	}
-	days, err := strconv.Atoi(raw)
-	if err != nil || days <= 0 {
-		return defaultBackfillHorizon
-	}
-	return time.Duration(days) * 24 * time.Hour
-}
+// How deep the backfill reaches is settings.KeyBackfillDays, resolved by
+// effectiveBackfillHorizon. It needs to be a horizon rather than "as far as possible": without one
+// the backfill walked every recent peer's history backwards a page per round indefinitely, which on
+// a real account meant six million stored messages and a 3.7GB database inside a day.

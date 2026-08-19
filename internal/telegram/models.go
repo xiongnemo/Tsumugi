@@ -28,6 +28,10 @@ const (
 	EventTyping                  EventKind = "typing"
 	EventReadInbox               EventKind = "read_inbox"
 	EventSearchResults           EventKind = "search_results"
+	// EventStorage reports local-storage housekeeping. It is routed to whatever surface asked for
+	// it — the settings panel while that is open — because the status bar is hidden behind the
+	// overlay the cleanup is started from.
+	EventStorage EventKind = "storage"
 )
 
 type Event struct {
@@ -90,6 +94,13 @@ type Event struct {
 	// SearchHits carries a completed search. RequestID gates it, so a slow earlier search
 	// cannot overwrite the results of a newer one.
 	SearchHits []SearchHit
+	// StorageBytes is how large the database is now, and StorageRemoved how many messages the
+	// cleanup deleted. Zero bytes means "unknown", so a progress report does not blank a size the
+	// panel already knows.
+	StorageBytes   int64
+	StorageRemoved int64
+	// StorageBusy marks a cleanup that was refused because one is already running.
+	StorageBusy bool
 }
 
 // BackgroundKind identifies low-priority work shown in the status bar right column.
@@ -214,6 +225,9 @@ const (
 	CommandForwardMessages  CommandKind = "forward_messages"
 	CommandSearchMessages   CommandKind = "search_messages"
 	CommandLoadNewer        CommandKind = "load_newer"
+	// CommandCleanupStorage applies the current retention setting immediately and reclaims the
+	// freed space, rather than waiting for the background pruner to work through it.
+	CommandCleanupStorage CommandKind = "cleanup_storage"
 )
 
 type Command struct {

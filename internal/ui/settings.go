@@ -2,8 +2,6 @@ package ui
 
 import (
 	"context"
-	"strconv"
-	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -14,12 +12,22 @@ import (
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
 
+// settingsCategoryWidth is the fixed width of the category rail, so the section forms get whatever
+// the terminal has left. Named because a section with several buttons only renders all of them above
+// a certain form width — see TestStorageFormRendersEveryButton.
+const settingsCategoryWidth = 28
+
 type settingsOverlay struct {
 	root    *tview.Flex
 	list    *tview.List
 	content *tview.Flex
 	status  *tview.TextView
 	form    *tview.Form
+	// sizeView is the database-size field of the storage section, updated as a cleanup progresses.
+	sizeView *tview.TextView
+	// confirm is a modal shown over this overlay. Tracked so Esc dismisses the modal rather than
+	// the whole settings panel underneath it.
+	confirm tview.Primitive
 }
 
 func (a *App) showSettings() {
@@ -57,20 +65,7 @@ func (a *App) showSettings() {
 		}
 	}
 
-	openGeneral := func() {
-		form := a.settingsGeneralForm(overlay)
-		showSection(i18n.T(i18n.KeySettingsGeneral), form, form, true)
-	}
-
-	list.AddItem(i18n.T(i18n.KeySettingsGeneral), i18n.T(i18n.KeySettingsGeneralDesc), 0, openGeneral)
-	list.AddItem(i18n.T(i18n.KeySettingsAccount), i18n.T(i18n.KeySettingsAccountDesc), 0, func() {
-		form := a.settingsAccountForm(overlay)
-		showSection(i18n.T(i18n.KeySettingsAccount), form, form, true)
-	})
-	list.AddItem(i18n.T(i18n.KeySettingsNetwork), i18n.T(i18n.KeySettingsNetworkDesc), 0, func() {
-		a.settingsOverlay = nil
-		a.showProxySettings()
-	})
+	a.populateSettingsList(overlay)
 
 	hint := tview.NewTextView().
 		SetDynamicColors(true).
@@ -82,7 +77,7 @@ func (a *App) showSettings() {
 		AddItem(content, 0, 1, true).
 		AddItem(status, 3, 0, false)
 	view := tview.NewFlex().
-		AddItem(list, 28, 0, true).
+		AddItem(list, settingsCategoryWidth, 0, true).
 		AddItem(right, 0, 1, true)
 	overlay.root = view
 	a.settingsOverlay = overlay
@@ -101,67 +96,56 @@ func (a *App) settingsGeneralForm(overlay *settingsOverlay) *tview.Form {
 	form.AddDropDown(i18n.T(i18n.KeySettingsLanguage), []string{"English (en)", "中文 (zh)"}, localeIndex, nil).
 		AddCheckbox(i18n.T(i18n.KeySettingsInlineAnim), a.settings.InlineAnim, nil).
 		AddCheckbox(i18n.T(i18n.KeySettingsJumpUnread), a.settings.JumpToFirstUnread, nil).
-		AddInputField(i18n.T(i18n.KeySettingsRetention), strconv.Itoa(a.settings.RetentionDays), 6,
-			func(text string, _ rune) bool {
-				// Digits only: the field means a number of days, and 0 means keep everything.
-				for _, r := range text {
-					if r < '0' || r > '9' {
-						return false
-					}
-				}
-				return len(text) <= 5
-			}, nil).
 		AddButton(i18n.T(i18n.KeySettingsSave), func() {
-			dropdown := form.GetFormItem(0).(*tview.DropDown)
-			_, localeText := dropdown.GetCurrentOption()
-			locale := "en"
-			if localeText == "中文 (zh)" {
-				locale = "zh"
-			}
-			inlineAnim := form.GetFormItem(1).(*tview.Checkbox).IsChecked()
-			jumpUnread := form.GetFormItem(2).(*tview.Checkbox).IsChecked()
-			// Left at the stored value when the field is blank, rather than silently becoming
-			// "keep everything" because someone cleared it mid-edit.
-			retentionDays := a.settings.RetentionDays
-			if raw := strings.TrimSpace(form.GetFormItem(3).(*tview.InputField).GetText()); raw != "" {
-				if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 {
-					retentionDays = parsed
-				}
-			}
-			// Rebuilt as a literal, so every field has to be carried across explicitly:
-			// omitting one silently resets the user's choice whenever they touch any other
-			// General setting.
-			next := settings.Settings{
-				Locale:            locale,
-				InlineAnim:        inlineAnim,
-				OutgoingLayout:    a.settings.OutgoingLayout,
-				JumpToFirstUnread: jumpUnread,
-				RetentionDays:     retentionDays,
-			}
-			if err := next.Save(context.Background(), a.db); err != nil {
-				a.setSettingsStatus("[red]" + err.Error())
-				return
-			}
-			prevLocale := a.settings.Locale
-			a.settings = next
-			a.messages.SetInlineAnim(next.InlineAnim)
-			a.messages.SetLayoutMode(render.ParseLayoutMode(next.OutgoingLayout))
-			a.syncInlineAnimTicker()
-			if next.InlineAnim {
-				a.reloadCurrentChatForInlineAnim()
-			}
-			if prevLocale != next.Locale {
-				a.relocalizeVisibleMessages()
-				a.applyMainLocale()
-				a.refreshSettingsUI(overlay)
-				return
-			}
-			a.setSettingsStatus(i18n.T(i18n.KeySettingsSaved))
+			a.saveGeneralSettings(form, overlay)
 		}).
 		AddButton(i18n.T(i18n.KeySettingsClose), func() {
 			a.closeSettings()
 		})
 	return form
+}
+
+// saveGeneralSettings applies the General section. A method rather than the button closure it used to
+// be, so a test can run the same code the button runs.
+func (a *App) saveGeneralSettings(form *tview.Form, overlay *settingsOverlay) {
+	dropdown := form.GetFormItem(0).(*tview.DropDown)
+	_, localeText := dropdown.GetCurrentOption()
+	locale := "en"
+	if localeText == "中文 (zh)" {
+		locale = "zh"
+	}
+	inlineAnim := form.GetFormItem(1).(*tview.Checkbox).IsChecked()
+	jumpUnread := form.GetFormItem(2).(*tview.Checkbox).IsChecked()
+	// Rebuilt as a literal, so every field has to be carried across explicitly: omitting one
+	// silently resets the user's choice whenever they touch any other General setting. The storage
+	// day counts live in their own section and are carried through untouched here.
+	next := settings.Settings{
+		Locale:            locale,
+		InlineAnim:        inlineAnim,
+		OutgoingLayout:    a.settings.OutgoingLayout,
+		JumpToFirstUnread: jumpUnread,
+		RetentionDays:     a.settings.RetentionDays,
+		BackfillDays:      a.settings.BackfillDays,
+	}
+	if err := next.Save(context.Background(), a.db); err != nil {
+		a.setSettingsStatus("[red]" + err.Error())
+		return
+	}
+	prevLocale := a.settings.Locale
+	a.settings = next
+	a.messages.SetInlineAnim(next.InlineAnim)
+	a.messages.SetLayoutMode(render.ParseLayoutMode(next.OutgoingLayout))
+	a.syncInlineAnimTicker()
+	if next.InlineAnim {
+		a.reloadCurrentChatForInlineAnim()
+	}
+	if prevLocale != next.Locale {
+		a.relocalizeVisibleMessages()
+		a.applyMainLocale()
+		a.refreshSettingsUI(overlay)
+		return
+	}
+	a.setSettingsStatus(i18n.T(i18n.KeySettingsSaved))
 }
 
 func (a *App) settingsAccountForm(overlay *settingsOverlay) *tview.Form {
@@ -178,32 +162,42 @@ func (a *App) settingsAccountForm(overlay *settingsOverlay) *tview.Form {
 	return form
 }
 
+// populateSettingsList fills the category list.
+//
+// One copy, used by both the first build and the rebuild after a locale change. It was two, which
+// meant a new category had to be added in both places to exist in both — exactly the kind of
+// divergence that ships a section you can only reach before switching languages.
+func (a *App) populateSettingsList(overlay *settingsOverlay) {
+	open := func(titleKey string, build func(*settingsOverlay) *tview.Form) func() {
+		return func() {
+			form := build(overlay)
+			overlay.content.Clear()
+			overlay.form = form
+			form.SetBorder(true).SetTitle(" " + i18n.T(titleKey) + " ")
+			overlay.content.AddItem(form, 0, 1, true)
+			a.app.SetFocus(form)
+		}
+	}
+	overlay.list.Clear()
+	overlay.list.AddItem(i18n.T(i18n.KeySettingsGeneral), i18n.T(i18n.KeySettingsGeneralDesc), 0,
+		open(i18n.KeySettingsGeneral, a.settingsGeneralForm))
+	overlay.list.AddItem(i18n.T(i18n.KeySettingsStorage), i18n.T(i18n.KeySettingsStorageDesc), 0,
+		open(i18n.KeySettingsStorage, a.settingsStorageForm))
+	overlay.list.AddItem(i18n.T(i18n.KeySettingsAccount), i18n.T(i18n.KeySettingsAccountDesc), 0,
+		open(i18n.KeySettingsAccount, a.settingsAccountForm))
+	overlay.list.AddItem(i18n.T(i18n.KeySettingsNetwork), i18n.T(i18n.KeySettingsNetworkDesc), 0, func() {
+		// The proxy panel is its own overlay with its own root, not a form in this one.
+		a.settingsOverlay = nil
+		a.showProxySettings()
+	})
+}
+
 func (a *App) refreshSettingsUI(overlay *settingsOverlay) {
 	if overlay == nil || overlay.list == nil {
 		return
 	}
 	idx := overlay.list.GetCurrentItem()
-	overlay.list.Clear()
-	overlay.list.AddItem(i18n.T(i18n.KeySettingsGeneral), i18n.T(i18n.KeySettingsGeneralDesc), 0, func() {
-		form := a.settingsGeneralForm(overlay)
-		overlay.content.Clear()
-		overlay.form = form
-		form.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeySettingsGeneral) + " ")
-		overlay.content.AddItem(form, 0, 1, true)
-		a.app.SetFocus(form)
-	})
-	overlay.list.AddItem(i18n.T(i18n.KeySettingsAccount), i18n.T(i18n.KeySettingsAccountDesc), 0, func() {
-		form := a.settingsAccountForm(overlay)
-		overlay.content.Clear()
-		overlay.form = form
-		form.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeySettingsAccount) + " ")
-		overlay.content.AddItem(form, 0, 1, true)
-		a.app.SetFocus(form)
-	})
-	overlay.list.AddItem(i18n.T(i18n.KeySettingsNetwork), i18n.T(i18n.KeySettingsNetworkDesc), 0, func() {
-		a.settingsOverlay = nil
-		a.showProxySettings()
-	})
+	a.populateSettingsList(overlay)
 	if idx >= 0 && idx < overlay.list.GetItemCount() {
 		overlay.list.SetCurrentItem(idx)
 	}
@@ -286,6 +280,11 @@ func (a *App) captureSettings(event *tcell.EventKey) *tcell.EventKey {
 		a.app.Stop()
 		return nil
 	case tcell.KeyEsc:
+		// A modal on top of the panel gets Esc first; closing the panel out from under it would
+		// leave the user in the chat list wondering whether the cleanup started.
+		if a.dismissStorageConfirm() {
+			return nil
+		}
 		a.closeSettings()
 		return nil
 	case tcell.KeyTAB:

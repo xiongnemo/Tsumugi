@@ -85,11 +85,14 @@ type App struct {
 	msgActionZoomable bool
 	msgActionMsg      telegram.Message
 	settingsOverlay   *settingsOverlay
-	lastChatRefresh   time.Time
-	gapFillQueued     map[string]struct{}
-	control           chan<- ControlEvent
-	onboardingActive  bool
-	suggest           *composeSuggestState
+	// storageBytes is the last known database size, shown by the storage settings section. Cached
+	// because it is read off the UI thread and has to survive the panel being rebuilt.
+	storageBytes     int64
+	lastChatRefresh  time.Time
+	gapFillQueued    map[string]struct{}
+	control          chan<- ControlEvent
+	onboardingActive bool
+	suggest          *composeSuggestState
 	// Draft debounce state. draftPeer is the chat the pending save belongs to, so a switch
 	// away files it against the right peer.
 	draftTimer       *time.Timer
@@ -621,6 +624,11 @@ func (a *App) applyEvent(event telegram.Event) {
 	switch event.Kind {
 	case telegram.EventMentionSuggestions, telegram.EventBotCommandSuggestions, telegram.EventInlineResultSuggestions:
 		a.applyComposeSuggestions(event)
+		return
+	case telegram.EventStorage:
+		// Handled before the generic status handling below, which would only reach the status bar
+		// the settings panel is covering.
+		a.applyStorageEvent(event)
 		return
 	}
 	if !event.StatusMsg.IsZero() {

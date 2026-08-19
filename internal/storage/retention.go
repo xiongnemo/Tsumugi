@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -112,6 +113,27 @@ func (db *DB) DatabaseFileBytes(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return pageCount * pageSize, nil
+}
+
+// FormatBytes renders a byte count the way a person reads it.
+//
+// Lives next to DatabaseFileBytes rather than in the UI because both the backend (inside an
+// i18n.Msg argument) and the settings panel show sizes, and the display layer imports telegram, so
+// the shared helper cannot live there. Units are left untranslated on purpose: KB/MB/GB read the
+// same in every locale Tsumugi ships.
+func FormatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	value := float64(bytes)
+	for _, suffix := range []string{"KB", "MB", "GB"} {
+		value /= unit
+		if value < unit || suffix == "GB" {
+			return fmt.Sprintf("%.1f %s", value, suffix)
+		}
+	}
+	return fmt.Sprintf("%.1f GB", value)
 }
 
 // Compact rewrites the database to release free pages back to the filesystem.

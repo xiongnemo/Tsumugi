@@ -403,4 +403,19 @@ const (
 	KeySearchScopeGlobal     = "search.scope_global"
 	KeySearchFirst           = "search.first"
 	KeySearchLast            = "search.last"
+
+	// Storage settings: how much history is kept, how much is prefetched, and applying both now.
+	KeySettingsStorage        = "settings.storage"
+	KeySettingsStorageDesc    = "settings.storage_desc"
+	KeySettingsBackfill       = "settings.backfill"
+	KeySettingsDBSize         = "settings.db_size"
+	KeySettingsCleanup        = "settings.cleanup"
+	KeySettingsCleanupConfirm = "settings.cleanup_confirm"
+	KeySettingsCleanupBody    = "settings.cleanup_body"
+	KeySettingsCleanupForever = "settings.cleanup_body_forever"
+	KeyStatusCleanupStarted   = "status.cleanup_started"
+	KeyStatusCleanupPruning   = "status.cleanup_pruning"
+	KeyStatusCleanupCompact   = "status.cleanup_compacting"
+	KeyStatusCleanupDone      = "status.cleanup_done"
+	KeyStatusCleanupBusy      = "status.cleanup_busy"
 )

@@ -391,5 +391,18 @@
   "status.newer_loaded": "已加载 %d 条更新的消息。",
   "ui.footer_latest": "G 最新",
   "ui.footer_search_global": "G 全局搜索",
-  "settings.retention": "保留历史（天数，0 = 永久）:"
+  "settings.retention": "保留历史（天数，0 = 永久）:",
+  "settings.storage": "存储",
+  "settings.storage_desc": "历史保留、预取深度与清理",
+  "settings.backfill": "预取历史（天数，0 = 关闭）:",
+  "settings.db_size": "数据库大小:",
+  "settings.cleanup": "立即清理",
+  "settings.cleanup_confirm": "开始清理",
+  "settings.cleanup_body": "将删除 %d 天以前的消息（每个会话至少保留最新 %d 条），然后重写数据库以释放空间。\n\n被删除的消息仍在 Telegram 上，往前翻时会重新加载；未发送成功的消息不会被删除。重写期间其他操作需要等待，数据库较大时可能需要数分钟。",
+  "settings.cleanup_body_forever": "当前设置为永久保留，因此不会删除任何消息。\n\n只会重写数据库以释放此前清理留下的空闲空间。重写期间其他操作需要等待，数据库较大时可能需要数分钟。",
+  "status.cleanup_started": "正在清理本地历史…",
+  "status.cleanup_pruning": "已删除 %d 条消息…",
+  "status.cleanup_compacting": "已删除 %d 条消息，正在重写数据库…",
+  "status.cleanup_done": "清理完成：删除 %d 条消息，%s → %s。",
+  "status.cleanup_busy": "清理正在进行中。"
 }

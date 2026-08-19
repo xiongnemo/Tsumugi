@@ -20,6 +20,8 @@ const (
 	// KeyRetentionDays is how many days of message history to keep on disk. Zero keeps
 	// everything.
 	KeyRetentionDays = "retention_days"
+	// KeyBackfillDays is how deep the background prefetch reaches. Zero turns it off.
+	KeyBackfillDays = "backfill_days"
 )
 
 // DefaultRetentionDays is how much history is kept when nothing has been chosen.
@@ -32,6 +34,18 @@ const DefaultRetentionDays = 60
 // RetentionForever is the value that disables pruning entirely.
 const RetentionForever = 0
 
+// DefaultBackfillDays is how far back the background prefetch reaches by default.
+//
+// The mainstream clients prefetch nothing at all: TDLib's message database is a cache filled as a
+// side effect of what you actually open, which is why their databases stay small. Prefetching is
+// kept, but small, because scrolling up into a cache miss is a visible wait — and it is a setting
+// rather than a constant because how much offline history is worth the disk is the user's call, not
+// ours.
+const DefaultBackfillDays = 7
+
+// BackfillOff turns the prefetch off entirely, leaving history to load on demand.
+const BackfillOff = 0
+
 type Settings struct {
 	Locale            string
 	InlineAnim        bool
@@ -39,6 +53,8 @@ type Settings struct {
 	JumpToFirstUnread bool
 	// RetentionDays is how many days of history to keep; RetentionForever keeps all of it.
 	RetentionDays int
+	// BackfillDays is how many days back the background prefetch reaches; BackfillOff disables it.
+	BackfillDays int
 }
 
 func Defaults() Settings {
@@ -48,7 +64,29 @@ func Defaults() Settings {
 		OutgoingLayout:    "transcript",
 		JumpToFirstUnread: true,
 		RetentionDays:     DefaultRetentionDays,
+		BackfillDays:      DefaultBackfillDays,
 	}
+}
+
+// daysSetting reads a day count, preferring what the user stored over the environment.
+//
+// Zero is a meaningful value for both day counts — "keep everything" and "prefetch nothing" — so it
+// has to survive as a stored choice. Only a negative or unparseable value falls through to the next
+// source.
+func daysSetting(ctx context.Context, db *storage.DB, key, env string, fallback int) int {
+	if db != nil {
+		if v, ok, err := db.GetSetting(ctx, key); err == nil && ok {
+			if days, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && days >= 0 {
+				return days
+			}
+		}
+	}
+	if raw := strings.TrimSpace(os.Getenv(env)); raw != "" {
+		if days, err := strconv.Atoi(raw); err == nil && days >= 0 {
+			return days
+		}
+	}
+	return fallback
 }
 
 func Load(ctx context.Context, db *storage.DB) Settings {
@@ -56,7 +94,8 @@ func Load(ctx context.Context, db *storage.DB) Settings {
 	localeFromDB := false
 	inlineFromDB := false
 	jumpFromDB := false
-	retentionFromDB := false
+	out.RetentionDays = daysSetting(ctx, db, KeyRetentionDays, "TSUMUGI_RETENTION_DAYS", DefaultRetentionDays)
+	out.BackfillDays = daysSetting(ctx, db, KeyBackfillDays, "TSUMUGI_BACKFILL_DAYS", DefaultBackfillDays)
 	if db != nil {
 		if v, ok, err := db.GetSetting(ctx, KeyLocale); err == nil && ok && strings.TrimSpace(v) != "" {
 			out.Locale = strings.TrimSpace(v)
@@ -73,12 +112,6 @@ func Load(ctx context.Context, db *storage.DB) Settings {
 			out.JumpToFirstUnread = v == "1" || strings.EqualFold(v, "true")
 			jumpFromDB = true
 		}
-		if v, ok, err := db.GetSetting(ctx, KeyRetentionDays); err == nil && ok {
-			if days, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && days >= 0 {
-				out.RetentionDays = days
-				retentionFromDB = true
-			}
-		}
 	}
 	if !localeFromDB {
 		if env := strings.TrimSpace(os.Getenv("TSUMUGI_LOCALE")); env != "" {
@@ -92,13 +125,6 @@ func Load(ctx context.Context, db *storage.DB) Settings {
 	}
 	if env := strings.TrimSpace(os.Getenv("TSUMUGI_OUTGOING_LAYOUT")); env != "" {
 		out.OutgoingLayout = env
-	}
-	if !retentionFromDB {
-		if env := strings.TrimSpace(os.Getenv("TSUMUGI_RETENTION_DAYS")); env != "" {
-			if days, err := strconv.Atoi(env); err == nil && days >= 0 {
-				out.RetentionDays = days
-			}
-		}
 	}
 	// Default is on, so the env override has to be able to turn it off as well as on.
 	if !jumpFromDB {
@@ -142,6 +168,9 @@ func (s Settings) Save(ctx context.Context, db *storage.DB) error {
 		return err
 	}
 	if err := db.SetSetting(ctx, KeyRetentionDays, strconv.Itoa(s.RetentionDays)); err != nil {
+		return err
+	}
+	if err := db.SetSetting(ctx, KeyBackfillDays, strconv.Itoa(s.BackfillDays)); err != nil {
 		return err
 	}
 	i18n.SetLocale(s.Locale)

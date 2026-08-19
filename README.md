@@ -97,15 +97,23 @@ behaviour you may want to change.
   history, and lazy startup sync (dialog metadata plus optional recent-peer
   backfill). Set `TSUMUGI_SYNC_MODE=full` to restore the older all-peer history
   sweep on startup.
-- History retention is a setting: Settings → General → "Keep history (days, 0 = forever)",
-  or `TSUMUGI_RETENTION_DAYS`. The default is 60 days. Pruning runs in the background, never
-  empties a chat (the newest 200 messages per chat are always kept) and never touches unsent
-  messages.
-- Background backfill reaches back 30 days for recently active chats and then stops
-  (`TSUMUGI_BACKFILL_DAYS`), and always stays shallower than retention so the two cannot fight.
-  Set retention low enough and prefetching switches off entirely, leaving scroll-back to load
-  on demand. Without a horizon it never terminated: on a real account it stored six million
-  messages and a 3.7 GB database in about a day.
+- How much history lives on disk is two settings, in Settings → Storage, next to the current
+  database size:
+  - "Keep history (days, 0 = forever)" (`TSUMUGI_RETENTION_DAYS`, default 60). Pruning runs in
+    the background, never empties a chat (the newest 200 messages per chat are always kept) and
+    never touches unsent messages.
+  - "Prefetch history (days, 0 = off)" (`TSUMUGI_BACKFILL_DAYS`, default 7). The background
+    backfill reaches that far into recently active chats and then stops, and always stays
+    shallower than retention so the two cannot fight. At 0, or whenever retention is short
+    enough, prefetching switches off entirely and scroll-back loads on demand — which is how
+    the official clients work: their local database is a cache of what you opened, not a copy
+    of your history. Without a horizon it never terminated: on a real account it stored six
+    million messages and a 3.7 GB database in about a day.
+  - "Clean up now" applies both settings to what is already stored: it deletes everything past
+    the retention window, then rewrites the database so the space actually returns to the
+    filesystem. Pruning alone cannot shrink the file — SQLite keeps the freed pages for reuse —
+    so this is the only way to get a grown database back down. Everything else waits while the
+    rewrite runs, which takes minutes on a large database.
 - Single-line status bar: connection (left), foreground network activity
   (center), background tasks (right, only when running). Chat summary and
   history gap hints appear in the message pane title.
@@ -115,10 +123,10 @@ behaviour you may want to change.
   when you reopen the chat, and cleared once the message goes out. Drafts are stored
   encrypted locally so they survive a quit, and a draft changed in another client is
   picked up without ever overwriting text you are currently typing.
-- Unread handling: opening a chat marks it read and lands on the first unread message,
-  with a `-- Unread messages` rule above it. **`End`** or **`G`** returns to the latest
-  messages; the pane title says so while you are looking at older history. Turn the jump
-  off in Settings → General, or with `TSUMUGI_JUMP_UNREAD=0`.
+- Unread handling: opening a chat marks it read and lands on the first unread message,
+  with a `-- Unread messages` rule above it. **`End`** or **`G`** returns to the latest
+  messages; the pane title says so while you are looking at older history. Turn the jump
+  off in Settings → General, or with `TSUMUGI_JUMP_UNREAD=0`.
 - Typing indicators both ways. Typing in the composer notifies the peer, and someone
   typing, recording audio, or uploading a file in the open chat is shown in the
   message pane title next to the chat name.

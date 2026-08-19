@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gotd/td/telegram"
@@ -65,6 +66,10 @@ type GotdClient struct {
 	typingSend func(context.Context, *tg.MessagesSetTypingRequest) (bool, error)
 	// forwardSend replaces the MessagesForwardMessages call in tests.
 	forwardSend func(context.Context, *tg.MessagesForwardMessagesRequest) (tg.UpdatesClass, error)
+	// cleanupRunning stops a second cleanup starting while one is in flight. VACUUM holds the only
+	// database connection for as long as it runs, so two of them would queue up behind each other
+	// and double an already long freeze.
+	cleanupRunning atomic.Bool
 }
 
 type pendingMessage struct {
@@ -1319,6 +1324,10 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				// Must be `go`: forwarding is a network round trip and the command loop
 				// serves every other interaction.
 				go c.forwardMessages(ctx, accountID, api, events, command)
+			case CommandCleanupStorage:
+				// Must be `go`: this deletes rows and then rewrites the whole database, which on a
+				// multi-gigabyte file takes minutes.
+				go c.cleanupStorage(ctx, accountID, events)
 			case CommandMarkRead:
 				// Must be `go`: a synchronous read mark would stall the command loop on
 				// every scroll.

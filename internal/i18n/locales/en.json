@@ -391,5 +391,18 @@
   "status.newer_loaded": "Loaded %d newer messages.",
   "ui.footer_latest": "G latest",
   "ui.footer_search_global": "G search all",
-  "settings.retention": "Keep history (days, 0 = forever):"
+  "settings.retention": "Keep history (days, 0 = forever):",
+  "settings.storage": "Storage",
+  "settings.storage_desc": "History retention, prefetch depth and cleanup",
+  "settings.backfill": "Prefetch history (days, 0 = off):",
+  "settings.db_size": "Database size:",
+  "settings.cleanup": "Clean up now",
+  "settings.cleanup_confirm": "Clean up",
+  "settings.cleanup_body": "Delete messages older than %d days, keeping the newest %d in every chat, then rewrite the database to release the space.\n\nDeleted messages stay on Telegram and load again when you scroll back, and unsent messages are never removed. Everything else waits while the rewrite runs, which takes minutes on a large database.",
+  "settings.cleanup_body_forever": "History is set to keep everything, so no messages will be deleted.\n\nThe database will be rewritten to release space earlier cleanups left behind. Everything else waits while the rewrite runs, which takes minutes on a large database.",
+  "status.cleanup_started": "Cleaning up local history...",
+  "status.cleanup_pruning": "Removed %d messages...",
+  "status.cleanup_compacting": "Removed %d messages. Rewriting the database...",
+  "status.cleanup_done": "Cleanup done: %d messages removed, %s to %s.",
+  "status.cleanup_busy": "A cleanup is already running."
 }
