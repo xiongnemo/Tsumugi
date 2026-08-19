@@ -44,7 +44,7 @@
   "settings.save": "保存",
   "settings.close": "关闭",
   "settings.saved": "设置已保存。",
-  "settings.hint": "在左侧选择分类。Tab/←→ 切换面板，Enter 确认按钮。",
+  "settings.hint": "Tab/→ 进入 · ↑↓ 移动 · ← 返回 · Esc 关闭",
   "settings.categories": "分类",
   "settings.status": "状态",
   "settings.general_desc": "界面语言与 GIF 内联动画",

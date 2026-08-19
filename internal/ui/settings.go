@@ -285,31 +285,33 @@ func (a *App) captureSettings(event *tcell.EventKey) *tcell.EventKey {
 		if a.dismissStorageConfirm() {
 			return nil
 		}
+		if sectionDropDownOpen(overlay) != nil {
+			// The dropdown closes its own list on Esc. This capture runs first, so without the
+			// check the panel would close instead of the list the user was looking at.
+			return event
+		}
 		a.closeSettings()
 		return nil
 	case tcell.KeyTAB:
-		if focus == overlay.list && overlay.form != nil {
-			a.app.SetFocus(overlay.form)
+		if a.sectionEnterForm(overlay, focus) {
 			return nil
 		}
 		return event
 	case tcell.KeyRight:
-		if focus == overlay.list && overlay.form != nil {
-			a.app.SetFocus(overlay.form)
+		if a.sectionEnterForm(overlay, focus) {
 			return nil
+		}
+	case tcell.KeyUp, tcell.KeyDown, tcell.KeyLeft:
+		if next, handled := a.sectionArrowNavigation(overlay, event); handled {
+			return next
 		}
 	}
 
-	if focus == overlay.form {
-		return event
-	}
-	if focus == overlay.list {
-		switch event.Rune() {
-		case 'q':
-			a.app.Stop()
-			return nil
-		}
-		return event
+	if focus == overlay.list && event.Key() == tcell.KeyRune && event.Rune() == 'q' {
+		// Closes the panel rather than the application. Reaching for q in a settings screen is a
+		// habit worth honouring, but not by quitting: Ctrl+C is the exit.
+		a.closeSettings()
+		return nil
 	}
 	return event
 }

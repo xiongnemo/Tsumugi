@@ -85,6 +85,9 @@ type App struct {
 	msgActionZoomable bool
 	msgActionMsg      telegram.Message
 	settingsOverlay   *settingsOverlay
+	// proxyOverlay is the Settings -> Network panel. Same shape as a settings section, so it shares
+	// settingsOverlay and the section navigation.
+	proxyOverlay *settingsOverlay
 	// storageBytes is the last known database size, shown by the storage settings section. Cached
 	// because it is read off the UI thread and has to survive the panel being rebuilt.
 	storageBytes     int64
@@ -314,6 +317,12 @@ func (a *App) build() {
 func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 	if a.settingsOverlay != nil {
 		return a.captureSettings(event)
+	}
+	// The proxy panel is the same list-plus-form shape and needs the same handling. Without it its
+	// form was unreachable by keyboard at all: tview's List reads Tab as "next item", so Tab in the
+	// profile list just moved the selection and nothing ever crossed into the form.
+	if a.proxyOverlay != nil {
+		return a.captureProxyPanel(event)
 	}
 	focus := a.app.GetFocus()
 	// Checked before the suggestion panel, which matches bare Enter/Tab with no modifier test
@@ -1686,9 +1695,7 @@ func (a *App) showProxySettings() {
 			status.SetText(i18n.T(i18n.KeyProxyParseOK))
 		}).
 		AddButton(i18n.T(i18n.KeyProxyClose), func() {
-			a.app.SetRoot(a.root, true)
-			a.app.SetFocus(a.chats)
-			a.updateFocusStyle()
+			a.closeProxyPanel()
 		})
 	form.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeyProxyTitleProfile) + " ")
 	list.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeyProxyTitleList) + " ")
@@ -1700,11 +1707,66 @@ func (a *App) showProxySettings() {
 	view := tview.NewFlex().
 		AddItem(list, 34, 0, true).
 		AddItem(right, 0, 1, false)
+	// Tracked in App state, not just in these closures, so the key handling knows a panel is open —
+	// the pinned panel taught us that an overlay the capture cannot see is an overlay nothing can
+	// navigate or dismiss correctly.
+	a.proxyOverlay = &settingsOverlay{root: view, list: list, form: form, status: status}
 	a.app.SetRoot(view, true)
 	a.app.SetFocus(list)
 	if len(profiles) > 0 {
 		refreshForm(profiles[0])
 	}
+}
+
+// captureProxyPanel gives the proxy panel the same keyboard contract as a settings section.
+func (a *App) captureProxyPanel(event *tcell.EventKey) *tcell.EventKey {
+	overlay := a.proxyOverlay
+	if overlay == nil {
+		return event
+	}
+	focus := a.app.GetFocus()
+
+	switch event.Key() {
+	case tcell.KeyCtrlC:
+		a.app.Stop()
+		return nil
+	case tcell.KeyEsc:
+		if sectionDropDownOpen(overlay) != nil {
+			return event
+		}
+		a.closeProxyPanel()
+		return nil
+	case tcell.KeyTAB:
+		if a.sectionEnterForm(overlay, focus) {
+			return nil
+		}
+		return event
+	case tcell.KeyRight:
+		if a.sectionEnterForm(overlay, focus) {
+			return nil
+		}
+	case tcell.KeyUp, tcell.KeyDown, tcell.KeyLeft:
+		if next, handled := a.sectionArrowNavigation(overlay, event); handled {
+			return next
+		}
+	}
+
+	if focus == overlay.list && event.Key() == tcell.KeyRune && event.Rune() == 'q' {
+		a.closeProxyPanel()
+		return nil
+	}
+	return event
+}
+
+func (a *App) closeProxyPanel() {
+	a.proxyOverlay = nil
+	a.app.SetRoot(a.root, true)
+	if a.currentChat != "" {
+		a.app.SetFocus(a.messages)
+	} else {
+		a.app.SetFocus(a.chats)
+	}
+	a.updateFocusStyle()
 }
 
 func (a *App) showAuthPrompt(prompt *telegram.AuthPrompt) {

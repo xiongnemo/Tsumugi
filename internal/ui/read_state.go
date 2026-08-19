@@ -266,6 +266,12 @@ func (a *App) dismissTopOverlay() bool {
 	case a.searchList != nil:
 		a.closeSearchResults()
 		return true
+	case a.proxyOverlay != nil:
+		// Its own capture normally gets Esc and q first; registered here anyway because an overlay
+		// missing from this list is one nothing else can dismiss, which is how the pinned panel
+		// leaked its state on every Esc.
+		a.closeProxyPanel()
+		return true
 	default:
 		return false
 	}

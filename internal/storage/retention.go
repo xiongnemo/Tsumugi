@@ -121,6 +121,10 @@ func (db *DB) DatabaseFileBytes(ctx context.Context) (int64, error) {
 // i18n.Msg argument) and the settings panel show sizes, and the display layer imports telegram, so
 // the shared helper cannot live there. Units are left untranslated on purpose: KB/MB/GB read the
 // same in every locale Tsumugi ships.
+//
+// render.HumanSize is the same idea for message media and stays separate: it cannot be reached from
+// the backend (render imports telegram, so the dependency only goes one way), and it drops the space
+// and the decimal to fit a media caption, where this has a settings field to itself.
 func FormatBytes(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {

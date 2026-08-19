@@ -309,7 +309,11 @@ about it:
   emit. `Ctrl+Enter` and `Alt+Enter` are aliases that only work where the
   terminal can encode them.
 - **No mouse.** Every overlay and the inline result grid are fully
-  keyboard-reachable.
+  keyboard-reachable. In the settings and proxy panels, `Tab` or `→` enters a
+  section, `↑↓` move between its fields and buttons, `←` steps back to the
+  category list, and `Esc` closes the panel. tview's own forms move on `Tab`
+  only, so without this the right-hand pane could be entered but not walked and
+  not left.
 - **Glyphs.** The console font has no emoji and no CJK, so message text in those
   scripts renders as blanks — that cannot be fixed from inside the program.
   Tsumugi's own markers (pins, view counts, read receipts, selection marks) fall

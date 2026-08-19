@@ -189,7 +189,9 @@ func TestCaptureSettingsPassesNavigationKeysToFocusedForm(t *testing.T) {
 	app.app.SetFocus(form)
 	focused := app.app.GetFocus()
 
-	for _, key := range []tcell.Key{tcell.KeyTAB, tcell.KeyBacktab, tcell.KeyLeft, tcell.KeyRight} {
+	// The form's own movement keys stay the form's. Right has no meaning inside it and is passed
+	// through too; Left is the way back out and is checked separately.
+	for _, key := range []tcell.Key{tcell.KeyTAB, tcell.KeyBacktab, tcell.KeyRight} {
 		event := keyEvent(key)
 		if got := app.captureSettings(event); got != event {
 			t.Fatalf("settings form key %v was not passed through", key)

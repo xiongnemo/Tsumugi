@@ -44,7 +44,7 @@
   "settings.save": "Save",
   "settings.close": "Close",
   "settings.saved": "Settings saved.",
-  "settings.hint": "Select a category on the left. Tab/←→ switch panes. Enter activates buttons.",
+  "settings.hint": "Tab/→ enter · ↑↓ move · ← back · Esc close",
   "settings.categories": "Categories",
   "settings.status": "Status",
   "settings.general_desc": "Locale and inline GIF animation",
