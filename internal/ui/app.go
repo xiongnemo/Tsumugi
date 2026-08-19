@@ -1309,9 +1309,7 @@ func (a *App) showMessageActions() {
 			a.runMessageAction(action.ID, msg)
 		})
 	}
-	// The border takes a cell from each side, so the buttons lay out in a narrower box and the
-	// height needs the two border rows back.
-	formH := messageActionFormHeight(labels, a.overlayWidth()-2) + 2
+	formH := messageActionFormHeight(labels, a.overlayWidth())
 
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(top, 0, 1, true).

@@ -214,14 +214,13 @@ func writeTestPNG(t *testing.T, w, h int) string {
 }
 
 // The old height estimate reserved two rows per action for what tview draws as a single row of
-// buttons, and every over-reserved row came out of the preview above it. One button row plus the
-// Form's one-cell top inset is two.
+// buttons, and every over-reserved row came out of the preview above it.
 func TestMessageActionFormHeightIsMinimalWhenButtonsFitOneLine(t *testing.T) {
 	labels := []string{"Reply", "Delete", "Copy"}
 
-	if got := messageActionFormHeight(labels, 120); got != formContentInset+1 {
-		t.Fatalf("height = %d, want %d — three short buttons fit a 120-column terminal",
-			got, formContentInset+1)
+	if got := messageActionFormHeight(labels, 120); got != formBorderedBaseHeight {
+		t.Fatalf("height = %d, want the single-row base %d — three short buttons fit 120 columns",
+			got, formBorderedBaseHeight)
 	}
 }
 
@@ -239,19 +238,19 @@ func TestMessageActionFormHeightGrowsOnANarrowTerminal(t *testing.T) {
 	if narrow <= wide {
 		t.Fatalf("80 columns needed %d rows and 200 needed %d; narrower must need more", narrow, wide)
 	}
-	// It must still be a fraction of what the old two-rows-per-action estimate demanded, or the
-	// preview goes back to being squeezed.
+	// It must still be well under the old two-rows-per-action estimate, or the preview goes back
+	// to being squeezed.
 	if narrow >= len(labels)*2 {
 		t.Fatalf("height = %d for %d buttons, no better than the old estimate", narrow, len(labels))
 	}
 }
 
 func TestMessageActionFormHeightHandlesNoGeometry(t *testing.T) {
-	if got := messageActionFormHeight([]string{"Reply"}, 0); got < formContentInset+1 {
-		t.Fatalf("height = %d, want at least %d with no width known", got, formContentInset+1)
+	if got := messageActionFormHeight([]string{"Reply"}, 0); got < formBorderedBaseHeight {
+		t.Fatalf("height = %d, want at least %d with no width known", got, formBorderedBaseHeight)
 	}
-	if got := messageActionFormHeight(nil, 80); got != formContentInset+1 {
-		t.Fatalf("height = %d for no buttons, want %d", got, formContentInset+1)
+	if got := messageActionFormHeight(nil, 80); got != formBorderedBaseHeight {
+		t.Fatalf("height = %d for no buttons, want %d", got, formBorderedBaseHeight)
 	}
 }
 
@@ -260,7 +259,7 @@ func TestMessageActionFormHeightUsesDisplayWidth(t *testing.T) {
 	cjk := []string{"转发这条消息", "选中以便转发（v）", "回复", "删除", "复制"}
 
 	narrow := messageActionFormHeight(cjk, 40)
-	if narrow < formContentInset+formWrapRows {
+	if narrow < formBorderedBaseHeight+formWrapRows {
 		t.Fatalf("rows = %d; double-width labels must not be counted as single cells", narrow)
 	}
 }

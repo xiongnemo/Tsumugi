@@ -134,47 +134,47 @@ func (a *App) renderPreviewAsync(msg telegram.Message, view *tview.TextView, seq
 	}()
 }
 
-// Form geometry that has to be mirrored, all of it verified against a drawn Form rather than read
-// off the source, because reading it produced three wrong answers in a row.
+// Form geometry for the action bar. Every number here is measured from a drawn Form rather than
+// read out of tview, because reading it produced four wrong answers in a row — twenty-odd rows per
+// action, then one row per wrap, then the wrong usable width, then the wrong constant overhead.
+// TestMessageActionFormHeightMatchesRealForm re-derives all of them, so an upstream change fails
+// loudly instead of quietly hiding the bar again.
 const (
-	// A Form insets its content by one cell on each side even with no border, so the first button
-	// row sits at y=1 and the usable width is two cells short. Missing this is what made the
-	// model think two more buttons fitted on the first row than actually did.
-	formContentInset = 1
-	// Each wrap advances by lineHeight+1 in Form.Draw, and lineHeight is 1 with no form items.
+	// A bordered Form needs five rows before a single row of buttons renders at all. Two are the
+	// border; the rest is the Form's own vertical padding, whose exact composition does not
+	// matter as long as the number is checked.
+	formBorderedBaseHeight = 5
+	// Each wrapped row of buttons costs two more rows.
 	formWrapRows = 2
+	// The border and the Form's inset take two cells from each side.
+	formHorizontalChrome = 4
 	// tview pads a button label by four cells and leaves one cell between buttons.
 	formButtonPadding = 4
 	formButtonGap     = 1
 )
 
-// messageActionFormHeight is the height the action bar needs for its buttons.
+// messageActionFormHeight is the height the bordered action bar needs for its buttons.
 //
-// The original estimate reserved two rows per action — twenty-odd rows for what is usually a single
-// line — and every over-reserved row was taken from the preview above it. Correcting that then
-// overshot the other way and hid the bar entirely, twice, because a wrap costs two rows and the
-// content is inset.
-//
-// Display width, not rune count: the Chinese labels are double-width and wrap on a terminal that
-// looks far too wide to need it, which is the case that actually broke.
-//
-// TestMessageActionFormHeightMatchesRealForm holds this to a Form that has really been drawn.
+// The wrap arithmetic below was verified against a drawn Form at six widths and matches exactly;
+// only the constant overhead was ever wrong. Display width, not rune count: the Chinese labels are
+// double-width and wrap on a terminal that looks far too wide to need it, which is the case that
+// actually broke.
 func messageActionFormHeight(labels []string, width int) int {
 	if width <= 0 {
 		width = 80
 	}
-	usable := width - formContentInset*2
+	usable := width - formHorizontalChrome
 	if usable < 1 {
 		usable = 1
 	}
-	extraRows, x := 0, 0
+	rows, x := 1, 0
 	for _, label := range labels {
 		w := render.StringWidth(label) + formButtonPadding
 		space := usable - x
 		// Mirrors Form.Draw, which compares the space against the label without its padding.
 		if space < w-formButtonPadding {
 			x = 0
-			extraRows += formWrapRows
+			rows++
 			space = usable
 		}
 		if w > space {
@@ -182,8 +182,7 @@ func messageActionFormHeight(labels []string, width int) int {
 		}
 		x += w + formButtonGap
 	}
-	// One row of inset above, the button rows themselves, and the last row is inclusive.
-	return formContentInset + extraRows + 1
+	return formBorderedBaseHeight + formWrapRows*(rows-1)
 }
 
 // overlayWidth is the width a fullscreen overlay gets, used to lay out the action bar.
