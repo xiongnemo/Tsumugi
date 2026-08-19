@@ -11,6 +11,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/nemo/Tsumugi/internal/config"
+	"github.com/nemo/Tsumugi/internal/debuglog"
 	"github.com/nemo/Tsumugi/internal/secure"
 	"github.com/nemo/Tsumugi/internal/storage"
 	tgclient "github.com/nemo/Tsumugi/internal/telegram"
@@ -60,6 +61,7 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 	db.SetCipher(cipher)
+	debuglog.Log("startup", map[string]any{"step": "database_ready"})
 	if err := db.UpsertEnvironmentProxy(ctx, a.cfg.Proxy); err != nil {
 		return err
 	}
@@ -94,6 +96,13 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	defer stopClient()
 
+	debuglog.Log("startup", map[string]any{
+		"step":         "config_ready",
+		"auth_mode":    string(a.cfg.AuthMode),
+		"login_method": string(a.cfg.LoginMethod),
+		"ready":        a.cfg.ReadyForTelegram(),
+		"needs_wizard": a.cfg.NeedsOnboarding(),
+	})
 	if a.cfg.ReadyForTelegram() && !a.cfg.NeedsOnboarding() {
 		startClient(a.cfg)
 	}
@@ -145,7 +154,12 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}()
 
-	return ui.New(a.cfg, db, uiEvents, commands, control).Run(ctx)
+	debuglog.Log("startup", map[string]any{"step": "building_ui"})
+	tui := ui.New(a.cfg, db, uiEvents, commands, control)
+	debuglog.Log("startup", map[string]any{"step": "ui_built"})
+	err = tui.Run(ctx)
+	debuglog.Log("startup", map[string]any{"step": "ui_exited", "error": errText(err)})
+	return err
 }
 
 func sendClientEvent(ctx context.Context, events chan<- tgclient.Event, event tgclient.Event) {
@@ -303,4 +317,12 @@ func promptPassphrase() (string, error) {
 		return "", fmt.Errorf("empty passphrase")
 	}
 	return string(value), nil
+}
+
+// errText renders an error for a log field without a nil check at every call site.
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

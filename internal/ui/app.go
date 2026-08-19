@@ -14,6 +14,7 @@ import (
 	"github.com/rivo/tview"
 
 	"github.com/nemo/Tsumugi/internal/config"
+	"github.com/nemo/Tsumugi/internal/debuglog"
 	"github.com/nemo/Tsumugi/internal/i18n"
 	"github.com/nemo/Tsumugi/internal/media"
 	"github.com/nemo/Tsumugi/internal/network"
@@ -113,6 +114,10 @@ type App struct {
 	// rather than the newest messages, which is what End and G use to offer a way back.
 	historyWindowed bool
 	unreadDividerID string
+	loggedFirstDraw bool
+	// messagePaneFocused mirrors the focused pane so code running under the Application write
+	// lock never has to call GetFocus. See refreshFooter.
+	messagePaneFocused bool
 	// Forward picker overlay. Tracked in App because Esc has to be dismissed from the global
 	// capture; an overlay's own SetInputCapture never sees it.
 	forwardList       *tview.List
@@ -294,8 +299,9 @@ func (a *App) build() {
 		a.clampComposerScroll()
 		// tview exposes no resize hook, and the draw pass is where a new width first becomes
 		// visible. applyLayoutTier is idempotent, so this costs a comparison per frame.
-		width, _ := screen.Size()
+		width, height := screen.Size()
 		a.applyLayoutTier(width)
+		a.logFirstDraw(width, height)
 		return false
 	})
 	a.updateFocusStyle()
@@ -1156,6 +1162,10 @@ func (a *App) switchFocusPrevious() {
 }
 
 func (a *App) updateFocusStyle() {
+	// Cached here so the footer never has to ask the Application which pane has focus: see
+	// refreshFooter. updateFocusStyle runs on every focus change, which is exactly when the
+	// answer can differ.
+	a.messagePaneFocused = a.app != nil && a.messages != nil && a.app.GetFocus() == a.messages
 	// G means different things in different panes, and the footer says which.
 	defer a.refreshFooter()
 	focus := a.app.GetFocus()
@@ -1781,4 +1791,21 @@ func proxyURL(cfg network.ProxyConfig) string {
 		user = cfg.Username + ":" + cfg.Password + "@"
 	}
 	return fmt.Sprintf("%s://%s%s", cfg.Kind, user, cfg.Address)
+}
+
+// logFirstDraw records that the terminal has been painted at least once.
+//
+// A TUI that stops before its first draw leaves a cleared screen and nothing else, which looks the
+// same as a hang, a crash, and a blank root. This is the line that tells those apart in a log.
+func (a *App) logFirstDraw(width, height int) {
+	if a.loggedFirstDraw {
+		return
+	}
+	a.loggedFirstDraw = true
+	debuglog.Log("first_draw", map[string]any{
+		"width":      width,
+		"height":     height,
+		"chats":      len(a.allChats),
+		"layoutTier": int(a.layoutTier),
+	})
 }

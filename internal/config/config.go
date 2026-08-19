@@ -221,6 +221,13 @@ func (c Config) SessionPath(identity string) string {
 	return filepath.Join(c.Paths.SessionDir, safe+".json")
 }
 
+// defaultPaths resolves where Tsumugi keeps its files.
+//
+// configPath overrides *both* roots. It used to redirect only the config directory while the
+// database, sessions and media cache stayed under os.UserCacheDir, which made the flag a trap:
+// running with --config-dir pointed at an empty directory still opened the real database, read the
+// real stored credentials, and connected as the real account. There is no use for a config
+// directory that is isolated from the data it describes.
 func defaultPaths(configPath string) (Paths, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -233,6 +240,7 @@ func defaultPaths(configPath string) (Paths, error) {
 
 	if configPath != "" {
 		configDir = configPath
+		dataDir = configPath
 	}
 
 	baseConfig := filepath.Join(configDir, "tsumugi")

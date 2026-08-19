@@ -27,7 +27,7 @@ func run() error {
 
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.StringVar(&flags.AuthMode, "login", "", "login mode: user or bot")
-	flag.StringVar(&flags.ConfigPath, "config-dir", "", "override config directory")
+	flag.StringVar(&flags.ConfigPath, "config-dir", "", "override the config and data root (database, sessions, media cache)")
 	flag.StringVar(&flags.APIHash, "api-hash", "", "Telegram API hash")
 	flag.StringVar(&flags.BotToken, "bot-token", "", "Telegram bot token")
 	flag.StringVar(&flags.Phone, "phone", "", "Telegram phone number for user login")

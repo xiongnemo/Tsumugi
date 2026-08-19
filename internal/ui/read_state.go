@@ -191,7 +191,11 @@ func (a *App) refreshFooter() {
 		state.MarkedCount = a.messages.MarkedCount()
 	}
 	state.SearchHits = len(a.searchHits)
-	state.MessagePaneFocused = a.app != nil && a.messages != nil && a.app.GetFocus() == a.messages
+	// Read from a cached flag rather than a.app.GetFocus(). refreshFooter is reachable from the
+	// before-draw hook, and Application.draw holds the write lock while it runs that hook, so
+	// asking the Application anything that takes RLock deadlocks on the first draw — a
+	// sync.RWMutex is not reentrant. That is a black screen with the process still alive.
+	state.MessagePaneFocused = a.messagePaneFocused
 	// The footer sits in the right pane, so its own width is the one that matters, not the
 	// terminal's. Zero before the first draw, which FooterKeys reads as "list everything".
 	if _, _, w, _ := a.footer.GetInnerRect(); w > 0 {
