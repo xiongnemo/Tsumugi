@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
 	"github.com/nemo/Tsumugi/internal/render"
@@ -290,5 +291,95 @@ func TestMarksClearedOnChatSwitch(t *testing.T) {
 
 	if app.messages.MarkedCount() != 0 {
 		t.Fatalf("MarkedCount = %d, want marks dropped on leaving the chat", app.messages.MarkedCount())
+	}
+}
+
+// openForwardPicker builds the real overlay, so these drive the same handlers a keystroke does.
+// The earlier tests called commitForwardPick directly, which is exactly why they passed while the
+// picker was unusable: nothing was wired to call it.
+func newForwardPickerTestApp(t *testing.T) (*App, <-chan telegram.Command) {
+	t.Helper()
+	app, cmds := newSendTestApp()
+	giveTestAppARoot(app)
+	app.messages.SetRect(0, 0, 40, 12)
+	app.messages.SetMessages(readTestMessages("chat:1", 10, 11, 12))
+	app.messages.SelectByID("11")
+	app.messages.ToggleMark()
+	app.allChats = []telegram.Chat{
+		{ID: "chat:1", Title: "Current", Subtitle: "group"},
+		{ID: "user:2", Title: "Alice", Subtitle: "private"},
+	}
+	app.openForwardPicker(false)
+	return app, cmds
+}
+
+func TestForwardPickerEnterOnTheListCommits(t *testing.T) {
+	app, cmds := newForwardPickerTestApp(t)
+
+	// Enter reaches the list once a click has moved focus there.
+	handler := app.forwardList.InputHandler()
+	if handler == nil {
+		t.Fatal("the list has no input handler")
+	}
+	handler(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
+
+	if got := drainForward(cmds); got == nil {
+		t.Fatal("Enter on the list sent no forward command")
+	}
+}
+
+func TestForwardPickerEnterInTheFilterCommits(t *testing.T) {
+	app, cmds := newForwardPickerTestApp(t)
+
+	handler := app.forwardInput.InputHandler()
+	handler(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(tview.Primitive) {})
+
+	if got := drainForward(cmds); got == nil {
+		t.Fatal("Enter in the filter sent no forward command")
+	}
+}
+
+// The picker opens with the filter focused, so arrow keys have to reach the list without the user
+// clicking first.
+func TestForwardPickerArrowsMoveTheListFromTheFilter(t *testing.T) {
+	app, _ := newForwardPickerTestApp(t)
+	if app.forwardList.GetItemCount() < 2 {
+		t.Fatalf("rows = %d, want at least two to move between", app.forwardList.GetItemCount())
+	}
+	before := app.forwardList.GetCurrentItem()
+
+	handler := app.forwardInput.InputHandler()
+	handler(tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone), func(tview.Primitive) {})
+
+	if after := app.forwardList.GetCurrentItem(); after == before {
+		t.Fatalf("highlight stayed at %d; Down from the filter must move the list", before)
+	}
+}
+
+// Keys that mean something in a single-line field must keep editing the filter.
+func TestForwardPickerFilterKeepsItsOwnEditingKeys(t *testing.T) {
+	app, _ := newForwardPickerTestApp(t)
+
+	handler := app.forwardInput.InputHandler()
+	for _, r := range "ali" {
+		handler(tcell.NewEventKey(tcell.KeyRune, r, tcell.ModNone), func(tview.Primitive) {})
+	}
+
+	if got := app.forwardInput.GetText(); got != "ali" {
+		t.Fatalf("filter = %q, want the typed text", got)
+	}
+}
+
+func drainForward(cmds <-chan telegram.Command) *telegram.Command {
+	for {
+		select {
+		case cmd := <-cmds:
+			if cmd.Kind == telegram.CommandForwardMessages {
+				c := cmd
+				return &c
+			}
+		default:
+			return nil
+		}
 	}
 }

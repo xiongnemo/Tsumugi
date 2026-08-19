@@ -92,6 +92,23 @@ func (a *App) openForwardPicker(dropAuthor bool) {
 			a.commitForwardPick()
 		}
 	})
+	// Enter on the list and a double-click both arrive here. Without it the picker looks alive —
+	// the highlight moves — but nothing can ever be chosen.
+	list.SetSelectedFunc(func(int, string, string, rune) { a.commitForwardPick() })
+	// Focus stays on the filter so typing always filters, which means the list's own movement
+	// keys never reach it. Forwarding them is the deliberate custom focus arrangement AGENTS.md
+	// allows; only keys with no meaning in a single-line field are taken, so Home/End/Left/Right
+	// still edit the filter text.
+	input.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyUp, tcell.KeyDown, tcell.KeyPgUp, tcell.KeyPgDn:
+			if handler := list.InputHandler(); handler != nil {
+				handler(event, func(tview.Primitive) {})
+			}
+			return nil
+		}
+		return event
+	})
 
 	titleKey := i18n.KeyForwardTitle
 	if dropAuthor {

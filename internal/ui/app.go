@@ -417,6 +417,17 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 
+	// A mouse click moves focus onto the forward picker's list, after which plain letters would
+	// fall through to the global rune switch and trigger unrelated actions. Route them back into
+	// the filter instead. Fed by hand rather than by refocusing, because tview resolves the
+	// target primitive before this capture runs, so SetFocus here would not redirect this event.
+	if a.forwardList != nil && a.forwardInput != nil && focus == a.forwardList &&
+		event.Key() == tcell.KeyRune && event.Modifiers()&(tcell.ModCtrl|tcell.ModAlt) == 0 {
+		a.forwardInput.SetText(a.forwardInput.GetText() + string(event.Rune()))
+		a.app.SetFocus(a.forwardInput)
+		return nil
+	}
+
 	// The composer owns every key that reached this far: Enter inserts a newline, the send
 	// keys were handled above, and Tab/Backtab/Esc were handled by the switch. Without this
 	// the global rune switch below would see ordinary typing and 'q' would quit the app.
