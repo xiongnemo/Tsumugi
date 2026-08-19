@@ -401,20 +401,7 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		// Every overlay must be dismissed from here. This capture runs before the focused
 		// primitive and returns nil unconditionally, so an overlay's own SetInputCapture
 		// never sees Esc and any cleanup it does there is dead code.
-		if a.msgActionForm != nil {
-			a.restoreMessageFocus()
-			return nil
-		}
-		if a.pinnedList != nil {
-			a.closePinnedPanel()
-			return nil
-		}
-		if a.forwardList != nil {
-			a.closeForwardPicker()
-			return nil
-		}
-		if a.searchList != nil {
-			a.closeSearchResults()
+		if a.dismissTopOverlay() {
 			return nil
 		}
 		// Clearing a pending mark set comes before falling back to the chat list, so Esc
@@ -451,6 +438,14 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 	}
 	if isTextInputFocus(focus) {
 		return event
+	}
+	// q closes the topmost overlay and only quits when none is open, which is the pager
+	// convention and what a hand reaching for it in a viewer expects. Deliberately not a plain
+	// alias for "quit": losing the whole session to a habitual keystroke while a preview is up
+	// would be a poor trade. Placed after the text-input returns above so typing a q is never
+	// intercepted, and before the form returns below so it reaches every overlay.
+	if event.Key() == tcell.KeyRune && event.Rune() == 'q' && a.dismissTopOverlay() {
+		return nil
 	}
 	if focus == a.msgActionForm {
 		return event
