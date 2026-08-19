@@ -383,5 +383,7 @@
   "ui.footer_marked_count": "%d marked",
   "ui.footer_search_next": "n/N results",
   "status.forward_no_target": "No matching destination - clear the filter.",
-  "status.forwarding_to": "Forwarding %d message(s) to %s..."
+  "status.forwarding_to": "Forwarding %d message(s) to %s...",
+  "ui.preview_zoom_hint": "-/= zoom, 0 reset, arrows pan",
+  "ui.preview_video_unsupported": "Video cannot be previewed inline in this terminal. Use Open media or Download media."
 }

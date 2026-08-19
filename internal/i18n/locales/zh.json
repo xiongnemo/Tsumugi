@@ -383,5 +383,7 @@
   "ui.footer_marked_count": "已选 %d 条",
   "ui.footer_search_next": "n/N 结果",
   "status.forward_no_target": "没有匹配的转发目标——请清空筛选。",
-  "status.forwarding_to": "正在把 %d 条消息转发到 %s…"
+  "status.forwarding_to": "正在把 %d 条消息转发到 %s…",
+  "ui.preview_zoom_hint": "-/= 缩放，0 复位，方向键平移",
+  "ui.preview_video_unsupported": "此终端无法内嵌预览视频。请用「打开媒体」或「下载媒体」。"
 }

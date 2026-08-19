@@ -363,6 +363,9 @@ screen tview is drawing.
 - `L`: toggle outgoing message layout (message pane)
 - `R`: open the reaction panel for the selected message
 - `#`: expand the pinned banner into the full pinned message list
+- In the message detail preview: `-` / `=` zoom out and in, `0` resets to fit, arrows pan
+  once the image is larger than the pane. Zooming past the source resolution does nothing,
+  since the renderer never upscales.
 - `D`: download/cache the selected message media preview
 - `O`: open the selected message media preview externally
 - `?`: open settings (General, Account, Network)

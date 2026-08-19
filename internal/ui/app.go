@@ -78,12 +78,17 @@ type App struct {
 	msgActionPreview *tview.TextView
 	msgActionForm    *tview.Form
 	msgActionSeq     int
-	settingsOverlay  *settingsOverlay
-	lastChatRefresh  time.Time
-	gapFillQueued    map[string]struct{}
-	control          chan<- ControlEvent
-	onboardingActive bool
-	suggest          *composeSuggestState
+	// Preview zoom, in steps from fit-to-pane; see preview_zoom.go. msgActionMsg is kept so a
+	// zoom can re-rasterise without reopening the overlay.
+	msgActionZoom     int
+	msgActionZoomable bool
+	msgActionMsg      telegram.Message
+	settingsOverlay   *settingsOverlay
+	lastChatRefresh   time.Time
+	gapFillQueued     map[string]struct{}
+	control           chan<- ControlEvent
+	onboardingActive  bool
+	suggest           *composeSuggestState
 	// Draft debounce state. draftPeer is the chat the pending save belongs to, so a switch
 	// away files it against the right peer.
 	draftTimer       *time.Timer
@@ -1242,7 +1247,7 @@ func (a *App) showMessageActions() {
 	if deferRaster {
 		v := tview.NewTextView().
 			SetDynamicColors(true).
-			SetWordWrap(false).
+			SetWrap(false).
 			SetText(i18n.T(i18n.KeyUILoadingPreview))
 		v.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeyUIPreview) + " ")
 		imgView = v
@@ -1254,7 +1259,7 @@ func (a *App) showMessageActions() {
 		if previewStr != "" {
 			v := tview.NewTextView().
 				SetDynamicColors(true).
-				SetWordWrap(false).
+				SetWrap(false).
 				SetText(previewStr)
 			v.SetBorder(true).SetTitle(" " + i18n.T(i18n.KeyUIPreview) + " ")
 			imgView = v
@@ -1289,6 +1294,12 @@ func (a *App) showMessageActions() {
 	a.msgActionDetail = detail
 	a.msgActionForm = form
 	a.msgActionPreview = imgView
+	a.msgActionMsg = msg
+	// Only a still raster can be rescaled; a video placeholder or a bare label has nothing to
+	// resample.
+	a.msgActionZoomable = imgView != nil && isStillImagePreviewPath(localPath)
+	a.msgActionZoom = 0
+	a.applyPreviewTitle()
 	a.msgActionSeq++
 	seq := a.msgActionSeq
 
@@ -1297,35 +1308,29 @@ func (a *App) showMessageActions() {
 			a.restoreMessageFocus()
 			return nil
 		}
+		switch event.Rune() {
+		case '-', '_':
+			if a.adjustPreviewZoom(-1) {
+				return nil
+			}
+		case '=', '+':
+			if a.adjustPreviewZoom(1) {
+				return nil
+			}
+		case '0':
+			// Back to fit-to-pane, so there is a way out of eight steps of zooming.
+			if a.msgActionZoomable && a.msgActionZoom != 0 {
+				a.adjustPreviewZoom(-a.msgActionZoom)
+				return nil
+			}
+		}
 		return event
 	})
 	a.app.SetRoot(layout, true)
 	a.app.SetFocus(detail)
 
 	if deferRaster && imgView != nil {
-		pm := msg
-		iv := imgView
-		go func() {
-			a.app.QueueUpdateDraw(func() {})
-			var iw, ih int
-			a.app.QueueUpdate(func() {
-				_, _, iw, ih = iv.GetInnerRect()
-			})
-			if iw < 8 || ih < 4 {
-				return
-			}
-			s := a.messageActionMediaPreview(pm, iw, ih)
-			a.app.QueueUpdateDraw(func() {
-				if a.msgActionSeq != seq || a.msgActionPreview != iv {
-					return
-				}
-				if s != "" {
-					iv.SetText(s)
-				} else {
-					iv.SetText(i18n.T(i18n.KeyUINoPreview))
-				}
-			})
-		}()
+		a.renderPreviewAsync(msg, imgView, seq)
 	}
 }
 
@@ -1336,7 +1341,7 @@ func (a *App) messageActionMediaPreview(msg telegram.Message, maxCols, maxRows i
 	ext := strings.ToLower(filepath.Ext(msg.Media.LocalPath))
 	switch ext {
 	case ".webm", ".mp4", ".mkv", ".mov", ".avi", ".m4v":
-		return "[gray]此終端無法內嵌預覽影片。請用「Open media」或「Download media」。[-]"
+		return "[gray]" + i18n.T(i18n.KeyUIPreviewVideoUnsupported) + "[-]"
 	case ".png", ".jpg", ".jpeg", ".webp", ".gif":
 		// Use TextView inner dimensions as MaxCols×MaxRows (see showMessageActions deferred layout).
 		opts := media.RasterPreviewOptions{MaxCols: maxCols, MaxRows: maxRows}
@@ -1351,6 +1356,9 @@ func (a *App) restoreMessageFocus() {
 	a.msgActionDetail = nil
 	a.msgActionPreview = nil
 	a.msgActionForm = nil
+	a.msgActionZoom = 0
+	a.msgActionZoomable = false
+	a.msgActionMsg = telegram.Message{}
 	a.app.SetRoot(a.root, true)
 	a.app.SetFocus(a.messages)
 	a.updateFocusStyle()
