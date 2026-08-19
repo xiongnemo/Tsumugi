@@ -371,5 +371,15 @@
   "auth.qr_use_phone": "Use phone number instead",
   "onboarding.login_method": "Login method",
   "onboarding.login_phone": "Phone number",
-  "onboarding.login_qr": "QR code"
+  "onboarding.login_qr": "QR code",
+  "action.forward": "Forward this message",
+  "action.forward_marked": "Forward marked messages",
+  "action.mark": "Mark for forwarding (v)",
+  "action.unmark": "Unmark (v)",
+  "ui.footer_mark": "v mark",
+  "ui.footer_forward": "f forward",
+  "ui.footer_forward_plain": "F forward w/o author",
+  "ui.footer_clear_marks": "Esc clear",
+  "ui.footer_marked_count": "%d marked",
+  "ui.footer_search_next": "n/N results"
 }

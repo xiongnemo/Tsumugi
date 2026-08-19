@@ -430,33 +430,79 @@ func colorizeSender(name string, seed int) string {
 	return "[" + colors[seed%len(colors)] + "]" + name + "[-]"
 }
 
-func Footer(mode, version string, proxy network.ProxyConfig) string {
+// FooterState is what the key line needs to know to describe the current situation.
+type FooterState struct {
+	// MarkedCount > 0 switches the key line to the forwarding keys, because a user who has just
+	// marked something is looking for what to do with it — and would otherwise guess, which is
+	// how "r" gets pressed expecting reply and produces the reaction panel instead.
+	MarkedCount int
+	// SearchHits > 0 advertises n/N, which are dead until a search has run.
+	SearchHits int
+}
+
+// FooterKeys is the first footer line: what the keys do right now.
+func FooterKeys(state FooterState) string {
+	if state.MarkedCount > 0 {
+		return strings.Join([]string{
+			fmt.Sprintf(i18n.T(i18n.KeyUIFooterMarkedCount), state.MarkedCount),
+			i18n.T(i18n.KeyUIFooterForward),
+			i18n.T(i18n.KeyUIFooterForwardPlain),
+			i18n.T(i18n.KeyUIFooterMark),
+			i18n.T(i18n.KeyUIFooterClearMarks),
+			i18n.T(i18n.KeyUIFooterEnter),
+			i18n.T(i18n.KeyUIFooterQuit),
+		}, " | ")
+	}
 	parts := []string{
 		i18n.T(i18n.KeyUIFooterTabFocus),
-		i18n.T(i18n.KeyUIFooterBacktabFocus),
 		i18n.T(i18n.KeyUIFooterEnter),
 		i18n.T(i18n.KeyUIFooterSend),
-		i18n.T(i18n.KeyUIFooterLayout),
+		i18n.T(i18n.KeyUIFooterCompose),
+		i18n.T(i18n.KeyUIFooterMark),
 		i18n.T(i18n.KeyUIFooterReact),
 		i18n.T(i18n.KeyUIFooterPinned),
-		i18n.T(i18n.KeyUIFooterCompose),
 		i18n.T(i18n.KeyUIFooterSearch),
+	}
+	if state.SearchHits > 0 {
+		parts = append(parts, i18n.T(i18n.KeyUIFooterSearchNext))
+	}
+	parts = append(parts,
 		i18n.T(i18n.KeyUIFooterDownload),
 		i18n.T(i18n.KeyUIFooterOpen),
+		i18n.T(i18n.KeyUIFooterLayout),
 		i18n.T(i18n.KeyUIFooterSettings),
-		i18n.T(i18n.KeyUIFooterProxy),
 		i18n.T(i18n.KeyUIFooterQuit),
-	}
+	)
+	return strings.Join(parts, " | ")
+}
+
+// FooterStatus is the second footer line: mode, proxy and version.
+//
+// Split onto its own row because the single line held sixteen key hints plus all of this, and the
+// proxy address and version were pushed off the right edge even on a 1080p terminal — the two
+// things you actually need to be able to read at a glance.
+func FooterStatus(mode, version string, proxy network.ProxyConfig) string {
+	var parts []string
 	if mode != "" {
-		parts = append([]string{fmt.Sprintf(i18n.T(i18n.KeyUIFooterMode), mode)}, parts...)
+		parts = append(parts, fmt.Sprintf(i18n.T(i18n.KeyUIFooterMode), mode))
 	}
 	if proxy.Active() {
 		parts = append(parts, fmt.Sprintf(i18n.T(i18n.KeyUIFooterProxyActive), proxy.MaskedAddress()))
 	}
+	parts = append(parts, i18n.T(i18n.KeyUIFooterProxy), i18n.T(i18n.KeyUIFooterBacktabFocus))
 	if version != "" {
 		parts = append(parts, version)
 	}
 	return strings.Join(parts, " | ")
+}
+
+// Footer renders both lines, newline-separated.
+func Footer(mode, version string, proxy network.ProxyConfig) string {
+	return FooterWithState(FooterState{}, mode, version, proxy)
+}
+
+func FooterWithState(state FooterState, mode, version string, proxy network.ProxyConfig) string {
+	return FooterKeys(state) + "\n" + FooterStatus(mode, version, proxy)
 }
 
 func ProxyEntry(entry network.UIEntry) string {

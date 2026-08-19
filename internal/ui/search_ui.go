@@ -105,6 +105,8 @@ func (a *App) applySearchHits(hits []telegram.SearchHit, query string) {
 	a.searchHits = hits
 	a.searchQuery = query
 	a.searchCursor = ""
+	// n/N only mean something once there are hits, so the key line advertises them from here.
+	a.refreshFooter()
 	a.openSearchResults()
 }
 

@@ -32,6 +32,9 @@ func (a *App) toggleForwardMark() {
 	} else {
 		a.setStatusMsg(i18n.KeyStatusUnmarked, a.messages.MarkedCount())
 	}
+	// The key line changes meaning with the mark set, so it has to be redrawn here.
+	a.refreshFooter()
+	a.applyMessagesPaneTitle()
 }
 
 // clearForwardMarks drops the mark set. Esc does this before anything else, so a stray mark set
@@ -42,6 +45,8 @@ func (a *App) clearForwardMarks() bool {
 	}
 	a.messages.ClearMarks()
 	a.setStatusMsg(i18n.KeyStatusMarksCleared)
+	a.refreshFooter()
+	a.applyMessagesPaneTitle()
 	return true
 }
 
@@ -190,5 +195,6 @@ func (a *App) commitForwardPick() {
 	// Clearing here rather than in the viewport: it is App that knows a forward was actually
 	// requested, and openChat's two replaces must not be able to wipe a set being built.
 	a.messages.ClearMarks()
+	a.refreshFooter()
 	a.closeForwardPicker()
 }

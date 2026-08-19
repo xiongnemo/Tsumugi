@@ -7,7 +7,9 @@ import (
 
 	"github.com/nemo/Tsumugi/internal/config"
 	"github.com/nemo/Tsumugi/internal/i18n"
+	"github.com/nemo/Tsumugi/internal/render"
 	"github.com/nemo/Tsumugi/internal/telegram"
+	"github.com/nemo/Tsumugi/internal/version"
 )
 
 // markReadInterval coalesces read marks while the user scrolls. readHistory is monotonic, so
@@ -174,4 +176,20 @@ func (a *App) readablePeer(peerKey string) bool {
 	default:
 		return true
 	}
+}
+
+// refreshFooter redraws the footer for the current context.
+//
+// Called from anywhere that changes what the keys mean, so the hints never describe a state the
+// user has already left.
+func (a *App) refreshFooter() {
+	if a.footer == nil {
+		return
+	}
+	state := render.FooterState{}
+	if a.messages != nil {
+		state.MarkedCount = a.messages.MarkedCount()
+	}
+	state.SearchHits = len(a.searchHits)
+	a.footer.SetText(render.FooterWithState(state, string(a.cfg.AuthMode), version.String(), a.cfg.Proxy))
 }

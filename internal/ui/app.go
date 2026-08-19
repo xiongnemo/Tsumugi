@@ -21,7 +21,6 @@ import (
 	"github.com/nemo/Tsumugi/internal/settings"
 	"github.com/nemo/Tsumugi/internal/storage"
 	"github.com/nemo/Tsumugi/internal/telegram"
-	"github.com/nemo/Tsumugi/internal/version"
 )
 
 type App struct {
@@ -233,7 +232,8 @@ func (a *App) build() {
 	a.messages.SetActionFunc(a.showMessageActions)
 	a.messages.SetOnReachOlder(a.onReachOlderMessages)
 	a.messages.SetOnSelectionChanged(a.onMessageCursorMoved)
-	a.footer.SetText(render.Footer(string(a.cfg.AuthMode), version.String(), a.cfg.Proxy))
+	a.footer.SetWordWrap(false)
+	a.refreshFooter()
 
 	a.composeStack = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.suggest.panel, 0, 0, false).
@@ -245,7 +245,7 @@ func (a *App) build() {
 		AddItem(a.messages, 0, 1, false).
 		AddItem(a.composeStack, a.composeStackRows(), 0, false).
 		AddItem(a.statusBar, 1, 0, false).
-		AddItem(a.footer, 1, 0, false)
+		AddItem(a.footer, 2, 0, false)
 
 	a.root = tview.NewFlex().
 		AddItem(a.folders, folderRailWidth, 0, false).
@@ -1201,6 +1201,19 @@ func (a *App) showMessageActions() {
 		actions = append(actions, messageAction{ID: "jump_reply", LabelKey: i18n.KeyActionJumpReply})
 	}
 	actions = append(actions, messageAction{ID: "react", LabelKey: i18n.KeyActionReact})
+	// Enter is what a user presses on a message, so forwarding has to be reachable from here
+	// and not only from a key they have to already know about.
+	if a.messages.MarkedCount() > 0 {
+		actions = append(actions,
+			messageAction{ID: "forward_marked", LabelKey: i18n.KeyActionForwardMarked},
+			messageAction{ID: "unmark", LabelKey: i18n.KeyActionUnmark},
+		)
+	} else {
+		actions = append(actions,
+			messageAction{ID: "forward", LabelKey: i18n.KeyActionForward},
+			messageAction{ID: "mark", LabelKey: i18n.KeyActionMark},
+		)
+	}
 	actions = append(actions, messageAction{ID: "cancel", LabelKey: i18n.KeyActionCancel})
 
 	formH := len(actions)*2 + 4
@@ -1393,6 +1406,10 @@ func (a *App) runMessageAction(action string, msg telegram.Message) {
 		a.jumpToMessageID(msg.ReplyToID)
 	case "react":
 		a.showReactionPanelFor(msg)
+	case "forward", "forward_marked":
+		a.openForwardPicker(false)
+	case "mark", "unmark":
+		a.toggleForwardMark()
 	case "cancel":
 		return
 	}

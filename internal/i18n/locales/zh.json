@@ -371,5 +371,15 @@
   "auth.qr_use_phone": "改用手机号登录",
   "onboarding.login_method": "登录方式",
   "onboarding.login_phone": "手机号",
-  "onboarding.login_qr": "二维码"
+  "onboarding.login_qr": "二维码",
+  "action.forward": "转发这条消息",
+  "action.forward_marked": "转发已选中的消息",
+  "action.mark": "选中以便转发（v）",
+  "action.unmark": "取消选中（v）",
+  "ui.footer_mark": "v 选中",
+  "ui.footer_forward": "f 转发",
+  "ui.footer_forward_plain": "F 不带作者转发",
+  "ui.footer_clear_marks": "Esc 清空",
+  "ui.footer_marked_count": "已选 %d 条",
+  "ui.footer_search_next": "n/N 结果"
 }
