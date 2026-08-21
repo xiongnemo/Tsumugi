@@ -309,6 +309,9 @@ func (a *App) stageAttachment(path string) {
 		a.setStatusError(err)
 		return
 	}
+	// Attaching while editing leaves edit mode: an edit cannot carry media, so the two modes are
+	// mutually exclusive and the newer intent wins.
+	a.cancelEdit()
 	a.attachment = &attachment{Path: file.Path, Name: file.FileName, Size: file.Size, AsFile: a.attachAsFile}
 	a.rememberAttachDir(filepath.Dir(file.Path))
 	a.closeAttachPicker()
@@ -336,6 +339,12 @@ func (a *App) clearAttachment() bool {
 // other's title.
 func (a *App) applyComposerTitle() {
 	if a.composer == nil {
+		return
+	}
+	// Edit mode owns the whole title: the composer holds a copy of an existing message, and showing
+	// a reply target beside it would describe a message that is not being sent.
+	if title := a.editTitle(); title != "" {
+		a.composer.SetTitle(" " + title + " ")
 		return
 	}
 	parts := make([]string, 0, 2)

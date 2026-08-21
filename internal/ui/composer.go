@@ -258,6 +258,12 @@ func (a *App) submitComposer() {
 		return
 	}
 	rawText := a.composer.GetText()
+	// Editing replaces the message instead of adding one, so it takes the send key before any of
+	// the send paths look at the text.
+	if a.submitEdit(rawText) {
+		a.updateFocusStyle()
+		return
+	}
 	// A typed path is the fast way in for something copied from elsewhere; the picker is the
 	// discoverable one. Handled before anything else so the path never goes out as a message.
 	if path, ok := composerAttachCommand(rawText); ok {

@@ -98,6 +98,9 @@ type App struct {
 	attachDir     string
 	attachAsFile  bool
 	attachment    *attachment
+	// editTarget is the message the composer is rewriting, if any. Mutually exclusive with a staged
+	// attachment: Telegram edits text, not media, so allowing both would silently drop one.
+	editTarget *telegram.Message
 	// storageBytes is the last known database size, shown by the storage settings section. Cached
 	// because it is read off the UI thread and has to survive the panel being rebuilt.
 	storageBytes     int64
@@ -432,6 +435,10 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		if a.dismissTopOverlay() {
 			return nil
 		}
+		// Editing is the most specific mode the composer can be in, so Esc leaves it first.
+		if a.cancelEdit() {
+			return nil
+		}
 		// A staged attachment is the most recent thing the user did, so it unwinds first.
 		if a.clearAttachment() {
 			a.setStatusMsg(i18n.KeyStatusAttachmentCleared)
@@ -520,6 +527,15 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 	case 'F':
 		if focus == a.messages {
 			a.openForwardPicker(true)
+			return nil
+		}
+	case 'e':
+		if focus == a.messages {
+			if msg, ok := a.selectedMessageRow(); ok {
+				a.beginEdit(msg)
+			} else {
+				a.setStatusMsg(i18n.KeyStatusNoMessageSelected)
+			}
 			return nil
 		}
 	case 'a':
@@ -1266,6 +1282,9 @@ func (a *App) showMessageActions() {
 	if msg.State == "failed" && msg.Outgoing && strings.TrimSpace(msg.Text) != "" {
 		actions = append([]messageAction{{ID: "retry", LabelKey: i18n.KeyActionRetry}}, actions...)
 	}
+	if telegram.EditableMessage(msg) {
+		actions = append(actions, messageAction{ID: "edit", LabelKey: i18n.KeyActionEdit})
+	}
 	if msg.Media.Kind != "" {
 		actions = append(actions,
 			messageAction{ID: "open_media", LabelKey: i18n.KeyActionOpenMedia},
@@ -1479,6 +1498,9 @@ func (a *App) runMessageAction(action string, msg telegram.Message) {
 		} else {
 			a.setStatusMsg(i18n.KeyStatusCopiedText)
 		}
+	case "edit":
+		a.beginEdit(msg)
+		return
 	case "open_media":
 		if msg.Media.LocalPath == "" {
 			a.setStatusMsg(i18n.KeyStatusNoCachedPreview)

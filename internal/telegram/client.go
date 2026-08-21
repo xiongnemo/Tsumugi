@@ -77,6 +77,7 @@ type GotdClient struct {
 	// path can run without a network.
 	uploadFrom func(context.Context, termmedia.Outgoing) (tg.InputFileClass, error)
 	mediaSend  func(context.Context, *tg.MessagesSendMediaRequest) (tg.UpdatesClass, error)
+	editSend   func(context.Context, *tg.MessagesEditMessageRequest) (tg.UpdatesClass, error)
 	// cleanupRunning stops a second cleanup starting while one is in flight. VACUUM holds the only
 	// database connection for as long as it runs, so two of them would queue up behind each other
 	// and double an already long freeze.
@@ -1344,6 +1345,8 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				// Must be `go`: forwarding is a network round trip and the command loop
 				// serves every other interaction.
 				go c.forwardMessages(ctx, accountID, api, events, command)
+			case CommandEditMessage:
+				go c.editMessage(ctx, accountID, api, events, command)
 			case CommandSendMedia:
 				// Must be `go`: an upload can take minutes, and the command loop serves every
 				// other interaction.

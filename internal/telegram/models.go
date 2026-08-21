@@ -230,6 +230,8 @@ const (
 	CommandCleanupStorage CommandKind = "cleanup_storage"
 	// CommandSendMedia uploads a local file and sends it with the composer text as its caption.
 	CommandSendMedia CommandKind = "send_media"
+	// CommandEditMessage rewrites the text of a message already sent.
+	CommandEditMessage CommandKind = "edit_message"
 )
 
 type Command struct {

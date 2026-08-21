@@ -417,6 +417,17 @@ const (
 	KeyStatusAttachmentStaged      = "status.attachment_staged"
 	KeyStatusAttachmentCleared     = "status.attachment_cleared"
 
+	// Editing a message already sent.
+	KeyActionEdit           = "action.edit"
+	KeyUIEditing            = "ui.editing"
+	KeyStatusEditing        = "status.editing"
+	KeyStatusEdited         = "status.edited"
+	KeyStatusEditSubmitted  = "status.edit_submitted"
+	KeyStatusEditEmpty      = "status.edit_empty"
+	KeyStatusEditNotSynced  = "status.edit_not_synced"
+	KeyStatusEditCancelled  = "status.edit_cancelled"
+	KeyStatusEditNotAllowed = "status.edit_not_allowed"
+
 	// Storage settings: how much history is kept, how much is prefetched, and applying both now.
 	KeySettingsStorage        = "settings.storage"
 	KeySettingsStorageDesc    = "settings.storage_desc"
