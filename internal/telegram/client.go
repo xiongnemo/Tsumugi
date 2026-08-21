@@ -36,11 +36,16 @@ type Client interface {
 }
 
 type GotdClient struct {
-	cfg                  config.Config
-	store                *storage.DB
-	mtproto              *telegram.Client
-	pendingMu            sync.Mutex
-	pending              map[string][]pendingMessage
+	cfg       config.Config
+	store     *storage.DB
+	mtproto   *telegram.Client
+	pendingMu sync.Mutex
+	pending   map[string][]pendingMessage
+	// Local echoes keyed by identity rather than by text. See pending_echo.go: the text key
+	// cannot match an uncaptioned photo, which is how a media send ends up shown twice.
+	echoMu               sync.Mutex
+	echoByRandom         map[int64]pendingEcho
+	echoByServer         map[int]pendingEcho
 	peerHistoryMu        sync.Mutex
 	peerHistoryLocks     map[string]*sync.Mutex
 	fgLoadMu             sync.Mutex
@@ -678,7 +683,15 @@ func (c *GotdClient) registerUpdateHandlers(dispatcher *tg.UpdateDispatcher, acc
 				sendEvent(ctx, events, Event{Kind: EventChats, Chats: peersToChats(chats)})
 			}
 		}
-		removeIDs := c.takeMatchingPending(stMsg.PeerKey, stMsg.Text, stMsg.Outgoing)
+		// Identity first: updateMessageID tells us exactly which local row this message replaces,
+		// including for media with no caption, which the text key cannot match at all. The text
+		// match stays as the fallback for rows whose updateMessageID never arrived.
+		var removeIDs []int
+		if localID, ok := c.takePendingEchoForServerID(stMsg.PeerKey, stMsg.ID); ok {
+			removeIDs = []int{localID}
+		} else {
+			removeIDs = c.takeMatchingPending(stMsg.PeerKey, stMsg.Text, stMsg.Outgoing)
+		}
 		for _, id := range removeIDs {
 			if c.store != nil {
 				_ = c.store.DeleteMessage(ctx, *accountID, stMsg.PeerKey, id)
@@ -730,6 +743,13 @@ func (c *GotdClient) registerUpdateHandlers(dispatcher *tg.UpdateDispatcher, acc
 		return nil
 	}
 
+	// Registered before the message handlers because it is what makes them able to identify our
+	// own echoes: updateMessageID precedes the message in the same updates container, so by the
+	// time OnNewMessage runs the local row is already keyed by the server's id.
+	dispatcher.OnMessageID(func(_ context.Context, _ tg.Entities, update *tg.UpdateMessageID) error {
+		c.resolveEchoRandomID(update.RandomID, update.ID)
+		return nil
+	})
 	dispatcher.OnNewMessage(func(ctx context.Context, e tg.Entities, update *tg.UpdateNewMessage) error {
 		if accountID != nil {
 			c.saveUpdateState(ctx, events, storage.UpdateState{AccountID: *accountID, Pts: update.Pts})
@@ -1737,6 +1757,7 @@ func (c *GotdClient) sendText(ctx context.Context, accountID string, api *tg.Cli
 	}
 	_ = c.store.SaveMessages(ctx, []storage.Message{pending})
 	c.rememberPending(peerKey, text, pendingID)
+	c.rememberPendingEcho(peerKey, pendingID, randomID)
 	sendEvent(ctx, events, Event{Kind: EventMessages, PeerKey: peerKey, Messages: c.telegramMessages(ctx, accountID, []storage.Message{pending}), Append: true, StatusMsg: i18n.M(i18n.KeyStatusSending)})
 
 	request := &tg.MessagesSendMessageRequest{
@@ -1753,6 +1774,7 @@ func (c *GotdClient) sendText(ctx context.Context, accountID string, api *tg.Cli
 	updates, err := api.MessagesSendMessage(ctx, request)
 	if err != nil {
 		c.forgetPending(peerKey, text, pendingID)
+		c.forgetPendingEcho(randomID)
 		pending.State = "failed"
 		_ = c.store.SaveMessages(ctx, []storage.Message{pending})
 		sendEvent(ctx, events, Event{Kind: EventMessages, PeerKey: peerKey, Messages: c.telegramMessages(ctx, accountID, []storage.Message{pending}), Append: true})
@@ -1762,6 +1784,7 @@ func (c *GotdClient) sendText(ctx context.Context, accountID string, api *tg.Cli
 	serverMessages := c.messagesFromSendUpdates(ctx, api, accountID, peerKey, text, replyToID, updates)
 	if len(serverMessages) > 0 {
 		c.forgetPending(peerKey, text, pendingID)
+		c.forgetPendingEcho(randomID)
 		removeIDs := []int{pendingID}
 		_ = c.store.DeleteMessage(ctx, accountID, peerKey, pendingID)
 		_ = c.store.SaveMessages(ctx, serverMessages)
@@ -1832,6 +1855,7 @@ func (c *GotdClient) retrySendText(ctx context.Context, accountID string, api *t
 		return
 	}
 	c.rememberPending(peerKey, text, pendingID)
+	c.rememberPendingEcho(peerKey, pendingID, randomID)
 	sendEvent(ctx, events, Event{Kind: EventMessages, PeerKey: peerKey, Messages: c.telegramMessages(ctx, accountID, []storage.Message{st}), Append: true, StatusMsg: i18n.M(i18n.KeyStatusRetryingSend)})
 
 	request := &tg.MessagesSendMessageRequest{
@@ -1845,6 +1869,7 @@ func (c *GotdClient) retrySendText(ctx context.Context, accountID string, api *t
 	updates, err := api.MessagesSendMessage(ctx, request)
 	if err != nil {
 		c.forgetPending(peerKey, text, pendingID)
+		c.forgetPendingEcho(randomID)
 		st.State = "failed"
 		_ = c.store.SaveMessages(ctx, []storage.Message{st})
 		sendEvent(ctx, events, Event{Kind: EventMessages, PeerKey: peerKey, Messages: c.telegramMessages(ctx, accountID, []storage.Message{st}), Append: true})
@@ -1854,6 +1879,7 @@ func (c *GotdClient) retrySendText(ctx context.Context, accountID string, api *t
 	serverMessages := c.messagesFromSendUpdates(ctx, api, accountID, peerKey, text, replyToID, updates)
 	if len(serverMessages) > 0 {
 		c.forgetPending(peerKey, text, pendingID)
+		c.forgetPendingEcho(randomID)
 		removeIDs := []int{pendingID}
 		_ = c.store.DeleteMessage(ctx, accountID, peerKey, pendingID)
 		_ = c.store.SaveMessages(ctx, serverMessages)
