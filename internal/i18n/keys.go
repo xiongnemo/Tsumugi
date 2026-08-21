@@ -478,6 +478,10 @@ const (
 	KeyStatusChatLeft         = "status.chat_left"
 	KeyStatusLeaveNotPossible = "status.leave_not_possible"
 
+	// Playing audio.
+	KeyActionPlayMedia = "action.play_media"
+	KeyStatusPlaying   = "status.playing"
+
 	// Storage settings: how much history is kept, how much is prefetched, and applying both now.
 	KeySettingsStorage        = "settings.storage"
 	KeySettingsStorageDesc    = "settings.storage_desc"

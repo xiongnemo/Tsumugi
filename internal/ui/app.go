@@ -1332,8 +1332,14 @@ func (a *App) showMessageActions() {
 		}
 	}
 	if msg.Media.Kind != "" {
+		// "Play" rather than "Open" for voice and audio: the label is the only thing that says what
+		// the key will do, and O on a voice note is a play button.
+		open := messageAction{ID: "open_media", LabelKey: i18n.KeyActionOpenMedia}
+		if media.PlayableAudioKind(msg.Media.Kind) {
+			open = messageAction{ID: "play_media", LabelKey: i18n.KeyActionPlayMedia}
+		}
 		actions = append(actions,
-			messageAction{ID: "open_media", LabelKey: i18n.KeyActionOpenMedia},
+			open,
 			messageAction{ID: "download_media", LabelKey: i18n.KeyActionDownloadMedia},
 		)
 	}
@@ -1556,9 +1562,19 @@ func (a *App) runMessageAction(action string, msg telegram.Message) {
 	case "unpin":
 		a.requestPin(msg, true)
 		return
-	case "open_media":
+	case "open_media", "play_media":
 		if msg.Media.LocalPath == "" {
 			a.setStatusMsg(i18n.KeyStatusNoCachedPreview)
+			return
+		}
+		// Audio takes the player path, which falls back to a CLI player where there is no desktop
+		// handler - a bare console being exactly where xdg-open reports success and plays nothing.
+		if media.PlayableAudioKind(msg.Media.Kind) {
+			if err := media.PlayAudio(msg.Media.LocalPath); err != nil {
+				a.setStatusError(err)
+			} else {
+				a.setStatusMsg(i18n.KeyStatusPlaying)
+			}
 			return
 		}
 		if err := media.OpenPath(msg.Media.LocalPath); err != nil {

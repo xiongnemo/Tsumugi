@@ -132,6 +132,28 @@ behaviour you may want to change.
   sent as plain documents when it is not - ffmpeg stays optional. Upload progress
   shows in the status bar; a failed upload leaves a retryable row that still knows
   its local file.
+- Editing a sent message: **`e`** on your own message, or Edit in the action menu,
+  loads it back into the composer; `Ctrl+J` saves and `Esc` cancels. There is no
+  client-side time check, because Telegram's edit window differs by chat type and by
+  whether you are an admin - the server's answer is what you see.
+- Polls are rendered in full: question, one line per option with a share bar,
+  percentage and count, and a footer with the total. Voting is **Vote** in the action
+  menu; multiple-choice polls mark rows with `Enter` and commit with `Ctrl+J`. A
+  quiz's correct answer stays hidden until you answer it.
+- Pinning: **Pin** / **Unpin** in the action menu, matching whichever the message
+  currently is. Pins are silent - the service message still appears, but a thousand
+  members are not notified from a terminal.
+- Notifications, in Settings → General: off, terminal bell, or bell plus a desktop
+  notification where the terminal implements one. The bell goes through the terminal
+  itself, so it works on a bare console; it stays quiet for your own messages, for the
+  chat on screen, for muted chats, and rings once per burst rather than once per
+  message. The desktop option is opt-in and never used on `TERM=linux`.
+- Chat actions on **`m`**: mute, pin, archive and leave, each row offering the
+  opposite of the current state. Muted chats are marked in the chat list. Leaving asks
+  first, and is only offered for groups and channels.
+- Voice notes and audio play with **`O`** (labelled *Play*). The desktop handler is
+  used where there is one; on a bare console it falls back to `mpv`, `ffplay`,
+  `paplay` or `aplay`, because `xdg-open` there reports success and plays nothing.
 - Per-chat drafts, synced with Telegram. Unsent text is saved as you type, restored
   when you reopen the chat, and cleared once the message goes out. Drafts are stored
   encrypted locally so they survive a quit, and a draft changed in another client is

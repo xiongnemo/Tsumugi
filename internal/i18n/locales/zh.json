@@ -461,6 +461,8 @@
   "status.chat_unarchived": "已取消归档。",
   "status.chat_left": "已退出该会话。",
   "status.leave_not_possible": "该会话无法退出。",
+  "action.play_media": "播放",
+  "status.playing": "正在播放。",
   "attach.title": "附加文件（图片）",
   "attach.title_as_file": "附加文件（按文件发送）",
   "attach.hint": "Enter 进入/附加 · Ctrl+F 图片/文件 · Esc 取消",

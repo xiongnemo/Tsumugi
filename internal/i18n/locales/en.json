@@ -461,6 +461,8 @@
   "status.chat_unarchived": "Chat unarchived.",
   "status.chat_left": "Left the chat.",
   "status.leave_not_possible": "This chat cannot be left.",
+  "action.play_media": "Play",
+  "status.playing": "Playing.",
   "attach.title": "Attach (photo)",
   "attach.title_as_file": "Attach (as file)",
   "attach.hint": "Enter open/attach · Ctrl+F photo/file · Esc cancel",
