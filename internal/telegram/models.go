@@ -228,6 +228,8 @@ const (
 	// CommandCleanupStorage applies the current retention setting immediately and reclaims the
 	// freed space, rather than waiting for the background pruner to work through it.
 	CommandCleanupStorage CommandKind = "cleanup_storage"
+	// CommandSendMedia uploads a local file and sends it with the composer text as its caption.
+	CommandSendMedia CommandKind = "send_media"
 )
 
 type Command struct {
@@ -257,6 +259,10 @@ type Command struct {
 	ForwardDropAuthor bool
 	// SearchScope is "chat" or "global"; see SearchScope.
 	SearchScope string
+	// Media sending. MediaPath is a local file; Text carries its caption. MediaAsFile keeps the
+	// original bytes by uploading a document instead of letting Telegram re-encode a photo.
+	MediaPath   string
+	MediaAsFile bool
 }
 
 type MentionSuggestion struct {

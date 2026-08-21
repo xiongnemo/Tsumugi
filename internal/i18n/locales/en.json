@@ -94,6 +94,7 @@
   "ui.footer_settings": "? settings",
   "ui.footer_proxy": "P proxy",
   "ui.footer_quit": "q quit",
+  "ui.footer_attach": "a attach",
   "ui.footer_proxy_active": "proxy: %s",
 
   "status.connecting": "Connecting to Telegram...",
@@ -404,5 +405,15 @@
   "status.cleanup_pruning": "Removed %d messages...",
   "status.cleanup_compacting": "Removed %d messages. Rewriting the database...",
   "status.cleanup_done": "Cleanup done: %d messages removed, %s to %s.",
-  "status.cleanup_busy": "A cleanup is already running."
+  "status.cleanup_busy": "A cleanup is already running.",
+  "status.uploading": "Uploading %s... %d%%",
+  "status.attach_nothing_selected": "Nothing selected.",
+  "status.attachment_staged": "%s attached. Ctrl+J sends it.",
+  "status.attachment_cleared": "Attachment removed.",
+  "attach.title": "Attach (photo)",
+  "attach.title_as_file": "Attach (as file)",
+  "attach.hint": "Enter open/attach · Ctrl+F photo/file · Esc cancel",
+  "attach.filter_label": "Filter: ",
+  "attach.clipboard": "[clipboard image]",
+  "attach.clipboard_hint": "paste a screenshot"
 }

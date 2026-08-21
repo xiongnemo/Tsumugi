@@ -94,6 +94,7 @@
   "ui.footer_settings": "? 设置",
   "ui.footer_proxy": "P 代理",
   "ui.footer_quit": "q 退出",
+  "ui.footer_attach": "a 附件",
   "ui.footer_proxy_active": "代理: %s",
 
   "status.connecting": "正在连接 Telegram…",
@@ -404,5 +405,15 @@
   "status.cleanup_pruning": "已删除 %d 条消息…",
   "status.cleanup_compacting": "已删除 %d 条消息，正在重写数据库…",
   "status.cleanup_done": "清理完成：删除 %d 条消息，%s → %s。",
-  "status.cleanup_busy": "清理正在进行中。"
+  "status.cleanup_busy": "清理正在进行中。",
+  "status.uploading": "正在上传 %s… %d%%",
+  "status.attach_nothing_selected": "未选择任何内容。",
+  "status.attachment_staged": "已附加 %s，Ctrl+J 发送。",
+  "status.attachment_cleared": "已移除附件。",
+  "attach.title": "附加文件（图片）",
+  "attach.title_as_file": "附加文件（按文件发送）",
+  "attach.hint": "Enter 进入/附加 · Ctrl+F 图片/文件 · Esc 取消",
+  "attach.filter_label": "筛选: ",
+  "attach.clipboard": "[剪贴板图片]",
+  "attach.clipboard_hint": "直接发送截图"
 }

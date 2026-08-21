@@ -71,6 +71,10 @@ type GotdClient struct {
 	typingSend func(context.Context, *tg.MessagesSetTypingRequest) (bool, error)
 	// forwardSend replaces the MessagesForwardMessages call in tests.
 	forwardSend func(context.Context, *tg.MessagesForwardMessagesRequest) (tg.UpdatesClass, error)
+	// uploadFrom and mediaSend replace the upload and the send in tests, so the whole send-media
+	// path can run without a network.
+	uploadFrom func(context.Context, termmedia.Outgoing) (tg.InputFileClass, error)
+	mediaSend  func(context.Context, *tg.MessagesSendMediaRequest) (tg.UpdatesClass, error)
 	// cleanupRunning stops a second cleanup starting while one is in flight. VACUUM holds the only
 	// database connection for as long as it runs, so two of them would queue up behind each other
 	// and double an already long freeze.
@@ -1344,6 +1348,10 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				// Must be `go`: forwarding is a network round trip and the command loop
 				// serves every other interaction.
 				go c.forwardMessages(ctx, accountID, api, events, command)
+			case CommandSendMedia:
+				// Must be `go`: an upload can take minutes, and the command loop serves every
+				// other interaction.
+				go c.sendMedia(ctx, accountID, api, events, command)
 			case CommandCleanupStorage:
 				// Must be `go`: this deletes rows and then rewrites the whole database, which on a
 				// multi-gigabyte file takes minutes.
@@ -1972,6 +1980,11 @@ func sameStorageMessageSet(a, b []storage.Message) bool {
 func (c *GotdClient) rememberPending(peerKey, text string, id int) {
 	c.pendingMu.Lock()
 	defer c.pendingMu.Unlock()
+	if c.pending == nil {
+		// Lazily, like the echo maps: a client assembled without NewGotdClient would otherwise
+		// panic on its first send rather than simply having nothing remembered yet.
+		c.pending = make(map[string][]pendingMessage)
+	}
 	key := pendingKey(peerKey, text)
 	c.pending[key] = append(c.pending[key], pendingMessage{ID: id, CreatedAt: time.Now().UTC()})
 }

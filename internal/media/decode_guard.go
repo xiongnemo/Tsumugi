@@ -49,3 +49,22 @@ var ffmpegAvailable = sync.OnceValue(func() bool {
 	_, err := exec.LookPath("ffmpeg")
 	return err == nil
 })
+
+// ffprobeAvailable is the same question for ffprobe, which ships beside ffmpeg but not always: a
+// minimal build or a hand-placed binary can have one without the other, and reading dimensions out
+// of a video needs specifically this one.
+var ffprobeAvailable = sync.OnceValue(func() bool {
+	_, err := exec.LookPath("ffprobe")
+	return err == nil
+})
+
+// FFmpegAvailable reports whether ffmpeg can be run.
+//
+// Exported over the same resolved-once value the animation path uses rather than a second
+// exec.LookPath: that call walks PATH and stats every candidate, and doing it per frame per message
+// was one of the things saturating a core.
+func FFmpegAvailable() bool { return ffmpegAvailable() }
+
+// FFprobeAvailable reports whether ffprobe can be run. Callers must degrade rather than fail when it
+// cannot: ffmpeg is an optional dependency of this project, not a requirement.
+func FFprobeAvailable() bool { return ffprobeAvailable() }

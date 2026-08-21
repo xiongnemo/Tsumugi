@@ -148,6 +148,7 @@ const (
 	KeyUIFooterSearchGlobal      = "ui.footer_search_global"
 	KeyUIFooterPinned            = "ui.footer_pinned"
 	KeyUIFooterSend              = "ui.footer_send"
+	KeyUIFooterAttach            = "ui.footer_attach"
 	KeyUIComposePlaceholder      = "ui.compose_placeholder"
 
 	KeyPinnedTitle      = "pinned.title"
@@ -403,6 +404,18 @@ const (
 	KeySearchScopeGlobal     = "search.scope_global"
 	KeySearchFirst           = "search.first"
 	KeySearchLast            = "search.last"
+
+	// Sending media.
+	KeyStatusUploading             = "status.uploading"
+	KeyAttachTitle                 = "attach.title"
+	KeyAttachTitleAsFile           = "attach.title_as_file"
+	KeyAttachHint                  = "attach.hint"
+	KeyAttachFilterLabel           = "attach.filter_label"
+	KeyAttachClipboard             = "attach.clipboard"
+	KeyAttachClipboardHint         = "attach.clipboard_hint"
+	KeyStatusAttachNothingSelected = "status.attach_nothing_selected"
+	KeyStatusAttachmentStaged      = "status.attachment_staged"
+	KeyStatusAttachmentCleared     = "status.attachment_cleared"
 
 	// Storage settings: how much history is kept, how much is prefetched, and applying both now.
 	KeySettingsStorage        = "settings.storage"
