@@ -958,26 +958,8 @@ func (c *GotdClient) registerUpdateHandlers(dispatcher *tg.UpdateDispatcher, acc
 			return nil
 		}
 		pk := peerKey(kind, id)
-		reactionsJSON := ReactionsJSON(ParseMessageReactions(&update.Reactions))
-		if err := c.store.UpdateMessageReactions(ctx, *accountID, pk, update.MsgID, reactionsJSON); err != nil {
-			return err
-		}
-		patched, ok, err := c.store.MessageByID(ctx, *accountID, pk, update.MsgID)
-		if err != nil || !ok {
-			return err
-		}
-		tgMsgs := c.telegramMessages(ctx, *accountID, []storage.Message{patched})
-		if len(tgMsgs) > 0 {
-			entities := entitiesByID{users: e.Users, chats: e.Chats, channels: e.Channels}
-			tgMsgs[0].RecentReact = ParseRecentReactions(&update.Reactions, entities)
-		}
-		sendEvent(ctx, events, Event{
-			Kind:     EventMessages,
-			PeerKey:  pk,
-			Messages: tgMsgs,
-			Patch:    true,
-		})
-		return nil
+		entities := entitiesByID{users: e.Users, chats: e.Chats, channels: e.Channels}
+		return c.applyMessageReactions(ctx, *accountID, pk, update.MsgID, &update.Reactions, entities, events)
 	})
 	dispatcher.OnFolderPeers(func(ctx context.Context, _ tg.Entities, update *tg.UpdateFolderPeers) error {
 		if c.store == nil || accountID == nil || *accountID == "" {

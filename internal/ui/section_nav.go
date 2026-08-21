@@ -92,3 +92,29 @@ func (a *App) sectionEnterForm(overlay *settingsOverlay, focus tview.Primitive) 
 	a.app.SetFocus(overlay.form)
 	return true
 }
+
+// formArrowRewrite maps an arrow key onto the movement keys a tview Form actually understands.
+//
+// The same gap as the settings panel: a Form moves between its items on Tab, Enter and Backtab, and
+// nothing in it looks at the arrows. A row of buttons therefore could only be walked with Tab, which
+// is not what anyone presses when the buttons are side by side.
+//
+// horizontal picks which pair of arrows moves: Left/Right for a row of buttons, Up/Down for stacked
+// form items. The other pair is left alone so it keeps whatever meaning it already had.
+func formArrowRewrite(event *tcell.EventKey, horizontal bool) *tcell.EventKey {
+	if event == nil {
+		return nil
+	}
+	back, forward := tcell.KeyUp, tcell.KeyDown
+	if horizontal {
+		back, forward = tcell.KeyLeft, tcell.KeyRight
+	}
+	switch event.Key() {
+	case back:
+		return tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModNone)
+	case forward:
+		return tcell.NewEventKey(tcell.KeyTab, 0, tcell.ModNone)
+	default:
+		return event
+	}
+}

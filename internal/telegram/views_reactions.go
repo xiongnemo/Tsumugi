@@ -177,10 +177,16 @@ func (c *GotdClient) sendReaction(ctx context.Context, accountID string, api *tg
 	if len(reactions) > 0 {
 		req.SetReaction(reactions)
 	}
-	if _, err := api.MessagesSendReaction(ctx, req); err != nil {
+	updates, err := api.MessagesSendReaction(ctx, req)
+	if err != nil {
 		sendEvent(ctx, events, Event{Kind: EventError, Error: fmt.Errorf("send reaction: %w", err)})
 		return
 	}
+	// The response carries the new reaction state, and it has to be read here: gotd hands RPC
+	// updates back to the caller rather than feeding them to the dispatcher, so OnMessageReactions
+	// never sees our own reaction. Discarding it was why a reaction you added did not appear until
+	// something else refreshed the message - the same reason sendText parses its own response.
+	c.applyReactionUpdates(ctx, accountID, peerKey, messageID, updates, events)
 	sendEvent(ctx, events, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusReactionSent)})
 }
 
@@ -210,4 +216,61 @@ func (c *GotdClient) loadAvailableReactions(ctx context.Context, api *tg.Client)
 		return DefaultQuickReactions()
 	}
 	return out
+}
+
+// applyReactionUpdates pulls the new reaction state out of a sendReaction response.
+func (c *GotdClient) applyReactionUpdates(ctx context.Context, accountID, peerKey string, messageID int, updates tg.UpdatesClass, events chan<- Event) {
+	var list []tg.UpdateClass
+	var users []tg.UserClass
+	var chats []tg.ChatClass
+	switch u := updates.(type) {
+	case *tg.Updates:
+		list, users, chats = u.Updates, u.Users, u.Chats
+	case *tg.UpdatesCombined:
+		list, users, chats = u.Updates, u.Users, u.Chats
+	case *tg.UpdateShort:
+		list = []tg.UpdateClass{u.Update}
+	}
+	entities := dialogEntities(users, chats)
+	for _, update := range list {
+		reactions, ok := update.(*tg.UpdateMessageReactions)
+		if !ok {
+			continue
+		}
+		_ = c.applyMessageReactions(ctx, accountID, peerKey, reactions.MsgID, &reactions.Reactions, entities, events)
+		return
+	}
+	// Some peers answer with an edited message rather than a reactions update. Re-reading the row
+	// keeps one code path for what the UI receives.
+	if stored, ok := c.storedMessage(ctx, accountID, peerKey, messageID); ok {
+		sendEvent(ctx, events, Event{
+			Kind:     EventMessages,
+			PeerKey:  peerKey,
+			Messages: c.telegramMessages(ctx, accountID, []storage.Message{stored}),
+			Patch:    true,
+		})
+	}
+}
+
+// applyMessageReactions stores a message's reactions and patches it into the view.
+//
+// Shared by the update handler and the send path so the two cannot disagree about what a reaction
+// change looks like.
+func (c *GotdClient) applyMessageReactions(ctx context.Context, accountID, peerKey string, messageID int, reactions *tg.MessageReactions, entities entitiesByID, events chan<- Event) error {
+	if c.store == nil || reactions == nil {
+		return nil
+	}
+	if err := c.store.UpdateMessageReactions(ctx, accountID, peerKey, messageID, ReactionsJSON(ParseMessageReactions(reactions))); err != nil {
+		return err
+	}
+	stored, ok, err := c.store.MessageByID(ctx, accountID, peerKey, messageID)
+	if err != nil || !ok {
+		return err
+	}
+	msgs := c.telegramMessages(ctx, accountID, []storage.Message{stored})
+	if len(msgs) > 0 {
+		msgs[0].RecentReact = ParseRecentReactions(reactions, entities)
+	}
+	sendEvent(ctx, events, Event{Kind: EventMessages, PeerKey: peerKey, Messages: msgs, Patch: true})
+	return nil
 }

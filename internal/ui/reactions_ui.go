@@ -110,7 +110,9 @@ func (a *App) showReactionPanelFor(msg telegram.Message) {
 			a.restoreMessageFocus()
 			return nil
 		}
-		return event
+		// The buttons sit in a row, so Left/Right is what a hand reaches for - and a tview Form
+		// moves on Tab and Backtab only.
+		return formArrowRewrite(event, true)
 	})
 	a.app.SetRoot(layout, true)
 	a.app.SetFocus(form)
