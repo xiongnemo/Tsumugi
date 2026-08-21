@@ -105,3 +105,102 @@ func TestListPeersCarriesTheMute(t *testing.T) {
 		t.Errorf("chat:2 came back muted: MuteUntil = %d", byKey["chat:2"].MuteUntil)
 	}
 }
+
+// The bug that made a client full of muted groups ring for all of them: Telegram reports no MuteUntil
+// at all for a dialog that follows its type's default, and only 19 of 773 dialogs on the real account
+// carried a per-chat value. Collapsing "no value" into 0 lost the other 754.
+func TestMuteResolvesAgainstTheScopeDefault(t *testing.T) {
+	const forever = 2147483647
+	cases := []struct {
+		name         string
+		explicit     int
+		hasExplicit  bool
+		scopeDefault int
+		want         int
+	}{
+		{"inherits a muted scope", MuteInherit, true, forever, forever},
+		{"no row at all inherits too", 0, false, forever, forever},
+		{"explicit unmute beats a muted scope", 0, true, forever, 0},
+		{"explicit mute beats an unmuted scope", forever, true, 0, forever},
+		{"inherits an unmuted scope", MuteInherit, true, 0, 0},
+	}
+	for _, tc := range cases {
+		if got := ResolveMute(tc.explicit, tc.hasExplicit, tc.scopeDefault); got != tc.want {
+			t.Errorf("%s: ResolveMute = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Telegram's "chats" scope covers basic groups and supergroups alike, while Tsumugi stores a
+// supergroup as kind "channel" - so resolving a supergroup against the broadcast default would use
+// the wrong setting entirely.
+func TestPeerNotifyScope(t *testing.T) {
+	cases := map[string]NotifyScope{
+		"user|private":    NotifyScopeUsers,
+		"self|":           NotifyScopeUsers,
+		"chat|group":      NotifyScopeChats,
+		"channel|group":   NotifyScopeChats,
+		"channel|channel": NotifyScopeBroadcasts,
+	}
+	for input, want := range cases {
+		kind, subtitle := input[:len(input)-len(want)], ""
+		parts := 0
+		for i := 0; i < len(input); i++ {
+			if input[i] == '|' {
+				kind, subtitle, parts = input[:i], input[i+1:], 1
+				break
+			}
+		}
+		if parts == 0 {
+			t.Fatalf("bad case %q", input)
+		}
+		if got := PeerNotifyScope(kind, subtitle); got != want {
+			t.Errorf("PeerNotifyScope(%q, %q) = %q, want %q", kind, subtitle, got, want)
+		}
+	}
+}
+
+// End to end through the query the chat list actually uses.
+func TestListPeersResolvesInheritedMutes(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	const forever = 2147483647
+	if err := db.SavePeers(ctx, []Peer{
+		{AccountID: "acct", Key: "channel:1", Kind: "channel", ID: 1, Title: "Supergroup", Subtitle: "group"},
+		{AccountID: "acct", Key: "channel:2", Kind: "channel", ID: 2, Title: "Broadcast", Subtitle: "channel"},
+		{AccountID: "acct", Key: "user:3", Kind: "user", ID: 3, Title: "Alice", Subtitle: "private"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Every dialog follows its type, as almost all of them do in practice.
+	for _, key := range []string{"channel:1", "channel:2", "user:3"} {
+		if err := db.SetPeerMute(ctx, "acct", key, MuteInherit); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Groups muted, channels and people not.
+	if err := db.SetNotifyDefault(ctx, "acct", NotifyScopeChats, forever); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetNotifyDefault(ctx, "acct", NotifyScopeBroadcasts, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	peers, err := db.ListPeers(ctx, "acct")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, p := range peers {
+		got[p.Key] = MuteActive(p.MuteUntil, time.Now())
+	}
+	if !got["channel:1"] {
+		t.Error("a supergroup did not inherit the muted chats default")
+	}
+	if got["channel:2"] {
+		t.Error("a broadcast inherited a mute it should not have")
+	}
+	if got["user:3"] {
+		t.Error("a private chat inherited a mute it should not have")
+	}
+}

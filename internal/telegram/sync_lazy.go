@@ -57,6 +57,9 @@ func (c *GotdClient) syncDialogMetadataOnly(ctx context.Context, accountID strin
 		return
 	}
 	sendBackgroundState(ctx, events, BackgroundState{Kind: BackgroundDialogs, Detail: i18n.T(i18n.KeyStatusSyncDialogs)})
+	// Before the dialog pages, because the first chat list is emitted from inside them and every
+	// dialog without a mute of its own resolves against these.
+	c.syncNotifyDefaults(ctx, accountID, api)
 	_ = c.syncDialogPages(ctx, accountID, api, events, 0, false)
 	_ = c.syncDialogPages(ctx, accountID, api, events, 1, true)
 	c.syncAllPinnedDialogs(ctx, accountID, api, events)

@@ -173,6 +173,13 @@ func (db *DB) migrate(ctx context.Context) error {
 			updated_at TEXT NOT NULL,
 			PRIMARY KEY(account_id, peer_key)
 		);`,
+		`CREATE TABLE IF NOT EXISTS notify_defaults (
+			account_id TEXT NOT NULL,
+			scope TEXT NOT NULL,
+			mute_until INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY(account_id, scope)
+		);`,
 		`CREATE TABLE IF NOT EXISTS peer_mutes (
 			account_id TEXT NOT NULL,
 			peer_key TEXT NOT NULL,
@@ -410,18 +417,41 @@ func (db *DB) withMutes(ctx context.Context, accountID string, peers []Peer) ([]
 	if len(peers) == 0 {
 		return peers, nil
 	}
-	mutes, err := db.PeerMutes(ctx, accountID)
-	if err != nil || len(mutes) == 0 {
-		// A failure here is not worth losing the peer list over: an unmuted-looking chat is a worse
-		// outcome than no chat list at all only if you squint.
+	mutes, err := db.peerMuteValues(ctx, accountID)
+	if err != nil {
+		// Not worth losing the peer list over; the next refresh tries again.
 		return peers, nil
 	}
+	defaults, err := db.NotifyDefaults(ctx, accountID)
+	if err != nil {
+		defaults = nil
+	}
 	for i := range peers {
-		if until, ok := mutes[peers[i].Key]; ok {
-			peers[i].MuteUntil = until
-		}
+		explicit, has := mutes[peers[i].Key]
+		scope := PeerNotifyScope(peers[i].Kind, peers[i].Subtitle)
+		peers[i].MuteUntil = ResolveMute(explicit, has, defaults[scope])
 	}
 	return peers, nil
+}
+
+// peerMuteValues returns every stored per-peer value, including the zeroes and the inherit markers,
+// because "explicitly unmuted" and "follows the default" are different answers.
+func (db *DB) peerMuteValues(ctx context.Context, accountID string) (map[string]int, error) {
+	rows, err := db.sql.QueryContext(ctx, `SELECT peer_key, mute_until FROM peer_mutes WHERE account_id = ?`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]int)
+	for rows.Next() {
+		var key string
+		var until int
+		if err := rows.Scan(&key, &until); err != nil {
+			return nil, err
+		}
+		out[key] = until
+	}
+	return out, rows.Err()
 }
 
 // RecentPeersForBackfill returns at most limit peers that are active since cutoff and do not yet

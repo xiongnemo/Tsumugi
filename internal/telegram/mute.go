@@ -7,6 +7,7 @@ import (
 	"github.com/gotd/td/tg"
 
 	"github.com/nemo/Tsumugi/internal/i18n"
+	"github.com/nemo/Tsumugi/internal/storage"
 )
 
 // muteForever is the deadline used when muting with no end.
@@ -27,9 +28,10 @@ func (c *GotdClient) storeDialogMute(ctx context.Context, accountID, peerKey str
 	}
 	until, ok := settings.GetMuteUntil()
 	if !ok {
-		// No value means "inherit the default for this peer type", which is unmuted as far as a
-		// per-chat marker is concerned.
-		until = 0
+		// No value means this dialog follows the default for its type, which is a different answer
+		// from "explicitly unmuted" - and treating them the same is what made a client full of
+		// muted groups ring for all of them.
+		until = storage.MuteInherit
 	}
 	_ = c.store.SetPeerMute(ctx, accountID, peerKey, until)
 }
@@ -83,4 +85,40 @@ func (c *GotdClient) mutePeer(ctx context.Context, accountID string, api *tg.Cli
 	}
 	sendEvent(ctx, events, Event{Kind: EventStatus, PeerKey: command.PeerKey, StatusMsg: i18n.M(status)})
 	c.scheduleChatListRefresh(ctx, accountID, events)
+}
+
+// syncNotifyDefaults reads the three per-type notification defaults.
+//
+// This is where most muting actually lives. Telegram lets a whole scope be muted - all groups, all
+// channels - and a dialog with no setting of its own inherits it, reporting no MuteUntil at all. On
+// this account only 19 of 773 dialogs carry a per-chat mute, so without these three calls almost
+// every muted group looked unmuted.
+//
+// Failures are ignored per scope: an unknown default is no worse than the old behaviour, and the next
+// startup tries again.
+func (c *GotdClient) syncNotifyDefaults(ctx context.Context, accountID string, api *tg.Client) {
+	if c.store == nil || api == nil {
+		return
+	}
+	scopes := []struct {
+		Scope storage.NotifyScope
+		Peer  tg.InputNotifyPeerClass
+	}{
+		{storage.NotifyScopeUsers, &tg.InputNotifyUsers{}},
+		{storage.NotifyScopeChats, &tg.InputNotifyChats{}},
+		{storage.NotifyScopeBroadcasts, &tg.InputNotifyBroadcasts{}},
+	}
+	for _, scope := range scopes {
+		settings, err := retryFloodWait(ctx, 1, "notify settings", func(ctx context.Context) (*tg.PeerNotifySettings, error) {
+			return api.AccountGetNotifySettings(ctx, scope.Peer)
+		})
+		if err != nil || settings == nil {
+			continue
+		}
+		until, ok := settings.GetMuteUntil()
+		if !ok {
+			until = 0
+		}
+		_ = c.store.SetNotifyDefault(ctx, accountID, scope.Scope, until)
+	}
 }
