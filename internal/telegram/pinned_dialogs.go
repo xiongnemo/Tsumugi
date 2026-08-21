@@ -6,6 +6,7 @@ import (
 
 	"github.com/gotd/td/tg"
 
+	"github.com/nemo/Tsumugi/internal/debuglog"
 	"github.com/nemo/Tsumugi/internal/i18n"
 	"github.com/nemo/Tsumugi/internal/storage"
 )
@@ -16,7 +17,11 @@ func (c *GotdClient) syncPinnedDialogs(ctx context.Context, accountID string, ap
 	}
 	res, err := api.MessagesGetPinnedDialogs(ctx, folderID)
 	if err != nil {
-		sendEvent(ctx, events, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusPinnedDialogsError, folderID, err)})
+		// Logged as well as reported. This went out as a status message carrying %v, so it drew in
+		// white rather than red, was cut off by the 56-cell status column, and never reached the
+		// debug log at all - the one place the full text of a failure is supposed to be recoverable.
+		debuglog.Error("pinned_dialogs", err, map[string]any{"folder_id": folderID})
+		sendEvent(ctx, events, Event{Kind: EventStatus, StatusMsg: i18n.M(i18n.KeyStatusPinnedDialogsError, folderID, describeRPCError(err))})
 		return
 	}
 	entities := dialogEntities(res.GetUsers(), res.GetChats())
@@ -90,21 +95,28 @@ func (c *GotdClient) syncPinnedDialogs(ctx context.Context, accountID string, ap
 }
 
 func (c *GotdClient) syncAllPinnedDialogs(ctx context.Context, accountID string, api *tg.Client, events chan<- Event) {
-	c.syncPinnedDialogs(ctx, accountID, api, events, 0)
 	if c.store == nil {
 		return
 	}
-	filters, err := c.store.ListDialogFilters(ctx, accountID)
-	if err != nil {
-		sendEvent(ctx, events, Event{Kind: EventError, Error: fmt.Errorf("list filters for pins: %w", err)})
-		return
+	// The main list and the archive, and nothing else. messages.getPinnedDialogs takes a *peer folder* id, of which
+	// Telegram has exactly two - 0 and 1 - while a dialog filter id is a different namespace
+	// entirely, chosen by whichever client created the filter. Passing filter ids here meant one
+	// doomed round trip per folder at every startup, each answered with a 400, which is both the
+	// mystery status line and part of why connecting felt slow.
+	//
+	// Pinned peers *inside* a filter do not come from this call at all: the filter carries its own
+	// pinned_peers list, which is already stored as FolderRules.PinnedPeers.
+	for _, folderID := range peerFolderIDsForPins() {
+		c.syncPinnedDialogs(ctx, accountID, api, events, folderID)
 	}
-	for _, filter := range filters {
-		if filter.Kind != "telegram" || filter.ID <= 0 || filter.Archive {
-			continue
-		}
-		c.syncPinnedDialogs(ctx, accountID, api, events, filter.ID)
-	}
+}
+
+// peerFolderIDsForPins is the complete list of folders that messages.getPinnedDialogs accepts.
+//
+// Named so a test can assert it, because the failure mode of getting this wrong is a 400 per entry
+// per startup and a status line nobody can read.
+func peerFolderIDsForPins() []int {
+	return []int{0, archiveFolderID}
 }
 
 func (c *GotdClient) refreshChatsFromStore(ctx context.Context, accountID string, events chan<- Event) {

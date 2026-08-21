@@ -36,3 +36,20 @@ func TestPreferPeerKeepsMainOverArchive(t *testing.T) {
 		t.Fatal("expected to replace archive row with main row")
 	}
 }
+
+// messages.getPinnedDialogs takes a peer folder id, of which Telegram has exactly two: 0 and 1. A
+// dialog filter id is a different namespace, chosen by whichever client created the filter, and
+// passing one here earns a 400 - one doomed round trip per folder at every startup.
+//
+// The plan for the search work called this out and it still shipped, in the one call site nobody
+// checked, so it is pinned here: only peer folders are legal arguments.
+func TestPinnedDialogFolderIDsArePeerFoldersOnly(t *testing.T) {
+	for _, id := range peerFolderIDsForPins() {
+		if id != 0 && id != archiveFolderID {
+			t.Errorf("folder id %d is not a peer folder; dialog filter ids belong to another namespace", id)
+		}
+	}
+	if got := len(peerFolderIDsForPins()); got != 2 {
+		t.Fatalf("%d folders queried for pins, want exactly the main list and the archive", got)
+	}
+}
