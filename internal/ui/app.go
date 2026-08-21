@@ -1299,6 +1299,13 @@ func (a *App) showMessageActions() {
 	if pollVotable(msg) {
 		actions = append(actions, messageAction{ID: "vote", LabelKey: i18n.KeyActionVote})
 	}
+	if a.pinnableMessage(msg) {
+		if a.messageIsPinned(msg) {
+			actions = append(actions, messageAction{ID: "unpin", LabelKey: i18n.KeyActionUnpin})
+		} else {
+			actions = append(actions, messageAction{ID: "pin", LabelKey: i18n.KeyActionPin})
+		}
+	}
 	if msg.Media.Kind != "" {
 		actions = append(actions,
 			messageAction{ID: "open_media", LabelKey: i18n.KeyActionOpenMedia},
@@ -1517,6 +1524,12 @@ func (a *App) runMessageAction(action string, msg telegram.Message) {
 		return
 	case "vote":
 		a.openPollVote(msg)
+		return
+	case "pin":
+		a.requestPin(msg, false)
+		return
+	case "unpin":
+		a.requestPin(msg, true)
 		return
 	case "open_media":
 		if msg.Media.LocalPath == "" {

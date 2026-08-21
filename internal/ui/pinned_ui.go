@@ -128,3 +128,50 @@ func (a *App) jumpToMessageID(id string) {
 	a.commands <- telegram.Command{Kind: telegram.CommandJumpToMessage, PeerKey: a.currentChat, MessageID: messageID}
 	a.setStatusMsg(i18n.KeyStatusJumpingToMessage)
 }
+
+// pinnableMessage reports whether pinning is worth offering for a message.
+//
+// Only the server knows whether this account may pin in this chat, so this is deliberately a weak
+// filter: it excludes what can never be pinned - service rows and local sends Telegram has never
+// seen - and leaves the permission question to CHAT_ADMIN_REQUIRED.
+func (a *App) pinnableMessage(msg telegram.Message) bool {
+	if msg.ServiceKey != "" || msg.State != "synced" {
+		return false
+	}
+	id, err := strconv.Atoi(msg.ID)
+	return err == nil && id > 0
+}
+
+// messageIsPinned reports whether this message is among the chat's pinned ones.
+//
+// Read from the cached pinned list, which is what the banner and the pinned panel already show, so
+// the action offered matches what the user can see rather than a second source of truth.
+func (a *App) messageIsPinned(msg telegram.Message) bool {
+	if a.pinnedCachePeer != msg.ChatID {
+		return false
+	}
+	for _, pinned := range a.pinnedCache {
+		if pinned.ID == msg.ID {
+			return true
+		}
+	}
+	return false
+}
+
+// requestPin pins or unpins a message.
+func (a *App) requestPin(msg telegram.Message, unpin bool) {
+	id, err := strconv.Atoi(msg.ID)
+	if err != nil || id <= 0 {
+		a.setStatusMsg(i18n.KeyStatusPinNotSynced)
+		return
+	}
+	if a.commands == nil {
+		return
+	}
+	a.commands <- telegram.Command{
+		Kind:      telegram.CommandPinMessage,
+		PeerKey:   msg.ChatID,
+		MessageID: id,
+		Unpin:     unpin,
+	}
+}

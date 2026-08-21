@@ -264,11 +264,36 @@ func TestSetInlineAnimDisabledClearsDecodedFrameCache(t *testing.T) {
 	if stats := media.InlineAnimCacheStats(); stats.Entries == 0 || stats.Bytes == 0 {
 		t.Fatalf("animation cache was not populated before disabling: %+v", stats)
 	}
+	// Wait for the decoder to finish, not merely to have started. AnimatedInlineANSI decodes
+	// asynchronously and writes every frame size it produces, so clearing while it is still working
+	// leaves an entry written *after* the clear - which read as "clearing does not work" about once
+	// in fifty runs.
+	settleAnimCache(t)
 
 	viewport := NewMessageViewport()
 	viewport.SetInlineAnim(false)
 	if stats := media.InlineAnimCacheStats(); stats.Entries != 0 || stats.Bytes != 0 {
 		t.Fatalf("animation cache was not cleared after disabling inline animation: %+v", stats)
+	}
+}
+
+// settleAnimCache waits until the animation cache stops growing.
+func settleAnimCache(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	last := media.InlineAnimCacheStats()
+	stable := 0
+	for time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		now := media.InlineAnimCacheStats()
+		if now == last {
+			if stable++; stable >= 3 {
+				return
+			}
+			continue
+		}
+		last = now
+		stable = 0
 	}
 }
 

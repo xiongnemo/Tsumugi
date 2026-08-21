@@ -234,6 +234,8 @@ const (
 	CommandEditMessage CommandKind = "edit_message"
 	// CommandSendVote answers a poll.
 	CommandSendVote CommandKind = "send_vote"
+	// CommandPinMessage pins the message, or unpins it when Unpin is set.
+	CommandPinMessage CommandKind = "pin_message"
 )
 
 type Command struct {
@@ -270,6 +272,8 @@ type Command struct {
 	// PollOptions are Telegram's opaque answer tokens, never indices: a poll can shuffle its
 	// options, and an index would vote for the wrong one.
 	PollOptions [][]byte
+	// Unpin turns CommandPinMessage into an unpin.
+	Unpin bool
 }
 
 type MentionSuggestion struct {

@@ -444,6 +444,13 @@ const (
 	KeyStatusPollClosed   = "status.poll_closed"
 	KeyStatusPollNone     = "status.poll_none"
 
+	// Pinning a message.
+	KeyActionPin          = "action.pin"
+	KeyActionUnpin        = "action.unpin"
+	KeyStatusPinned       = "status.pinned"
+	KeyStatusUnpinned     = "status.unpinned"
+	KeyStatusPinNotSynced = "status.pin_not_synced"
+
 	// Storage settings: how much history is kept, how much is prefetched, and applying both now.
 	KeySettingsStorage        = "settings.storage"
 	KeySettingsStorageDesc    = "settings.storage_desc"

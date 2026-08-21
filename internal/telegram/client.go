@@ -79,6 +79,7 @@ type GotdClient struct {
 	mediaSend  func(context.Context, *tg.MessagesSendMediaRequest) (tg.UpdatesClass, error)
 	editSend   func(context.Context, *tg.MessagesEditMessageRequest) (tg.UpdatesClass, error)
 	voteSend   func(context.Context, *tg.MessagesSendVoteRequest) (tg.UpdatesClass, error)
+	pinSend    func(context.Context, *tg.MessagesUpdatePinnedMessageRequest) (tg.UpdatesClass, error)
 	// cleanupRunning stops a second cleanup starting while one is in flight. VACUUM holds the only
 	// database connection for as long as it runs, so two of them would queue up behind each other
 	// and double an already long freeze.
@@ -1346,6 +1347,8 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				// Must be `go`: forwarding is a network round trip and the command loop
 				// serves every other interaction.
 				go c.forwardMessages(ctx, accountID, api, events, command)
+			case CommandPinMessage:
+				go c.pinMessage(ctx, accountID, api, events, command)
 			case CommandSendVote:
 				go c.sendVote(ctx, accountID, api, events, command)
 			case CommandEditMessage:

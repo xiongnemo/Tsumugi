@@ -67,8 +67,12 @@ func actionLabels(t *testing.T, locale string) []string {
 	t.Helper()
 	i18n.SetLocale(locale)
 	t.Cleanup(func() { i18n.SetLocale("en") })
+	// Every label the menu can show at once. Extended as actions are added, because the height
+	// model is measured against this set rather than trusted: the action bar shipped as an empty box
+	// twice by being modelled instead of drawn.
 	keys := []string{
 		i18n.KeyActionReply, i18n.KeyActionDelete, i18n.KeyActionCopy,
+		i18n.KeyActionEdit, i18n.KeyActionVote, i18n.KeyActionPin, i18n.KeyActionUnpin,
 		i18n.KeyActionOpenMedia, i18n.KeyActionDownloadMedia,
 		i18n.KeyActionReact, i18n.KeyActionForward, i18n.KeyActionMark,
 		i18n.KeyActionCancel,
