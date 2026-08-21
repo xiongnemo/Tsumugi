@@ -43,9 +43,11 @@ type GotdClient struct {
 	pending   map[string][]pendingMessage
 	// Local echoes keyed by identity rather than by text. See pending_echo.go: the text key
 	// cannot match an uncaptioned photo, which is how a media send ends up shown twice.
-	echoMu               sync.Mutex
-	echoByRandom         map[int64]pendingEcho
-	echoByServer         map[int]pendingEcho
+	echoMu       sync.Mutex
+	echoByRandom map[int64]pendingEcho
+	echoByServer map[int]pendingEcho
+	// chatRefresh coalesces chat-list rebuilds; see chat_refresh.go.
+	chatRefresh          chatListRefresher
 	peerHistoryMu        sync.Mutex
 	peerHistoryLocks     map[string]*sync.Mutex
 	fgLoadMu             sync.Mutex
@@ -682,10 +684,7 @@ func (c *GotdClient) registerUpdateHandlers(dispatcher *tg.UpdateDispatcher, acc
 			if err := c.store.SaveMessages(ctx, []storage.Message{stMsg}); err != nil {
 				return err
 			}
-			chats, err := c.store.ListPeers(ctx, *accountID)
-			if err == nil {
-				sendEvent(ctx, events, Event{Kind: EventChats, Chats: peersToChats(chats)})
-			}
+			c.scheduleChatListRefresh(ctx, *accountID, events)
 		}
 		// Identity first: updateMessageID tells us exactly which local row this message replaces,
 		// including for media with no caption, which the text key cannot match at all. The text
@@ -732,10 +731,7 @@ func (c *GotdClient) registerUpdateHandlers(dispatcher *tg.UpdateDispatcher, acc
 			if err := c.store.SaveMessages(ctx, []storage.Message{stMsg}); err != nil {
 				return err
 			}
-			chats, err := c.store.ListPeers(ctx, *accountID)
-			if err == nil {
-				sendEvent(ctx, events, Event{Kind: EventChats, Chats: peersToChats(chats)})
-			}
+			c.scheduleChatListRefresh(ctx, *accountID, events)
 		}
 		sendEvent(ctx, events, Event{
 			Kind:      EventMessages,
