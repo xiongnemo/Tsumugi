@@ -2690,6 +2690,8 @@ func fallbackFolders(chats []Chat) []Folder {
 
 func peersToChats(peers []storage.Peer) []Chat {
 	chats := make([]Chat, 0, len(peers))
+	// One "now" for the whole list, so two chats muted to the same deadline cannot disagree.
+	now := time.Now()
 	for _, p := range peers {
 		chats = append(chats, Chat{
 			ID:            p.Key,
@@ -2706,6 +2708,9 @@ func peersToChats(peers []storage.Peer) []Chat {
 			PreviewArg:    p.LastPreviewArg,
 			LastMessageAt: p.LastMessageAt,
 			TopMessageID:  p.TopMessageID,
+			// Here rather than at the emit sites: mute is now part of what a peer is, so every path
+			// that turns peers into chats carries it and none of them can forget.
+			Muted: storage.MuteActive(p.MuteUntil, now),
 		})
 	}
 	sortChats(chats)

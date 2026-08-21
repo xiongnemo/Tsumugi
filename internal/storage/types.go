@@ -46,6 +46,10 @@ type Peer struct {
 	HistoryLoadedUntil time.Time
 	ThumbCacheKey      string
 	UpdatedAt          time.Time
+	// MuteUntil is read-only here: it lives in peer_mutes and is filled in by ListPeers and Peer.
+	// SavePeers must never write it - that upsert runs on every incoming message, and only a dialog
+	// sync carries notify settings, so writing it would blank the mute. See mutes.go.
+	MuteUntil int
 }
 
 type Message struct {

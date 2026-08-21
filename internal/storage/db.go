@@ -391,7 +391,37 @@ func (db *DB) ListPeers(ctx context.Context, accountID string) ([]Peer, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanPeerRows(rows, accountID, 64)
+	peers, err := scanPeerRows(rows, accountID, 64)
+	if err != nil {
+		return nil, err
+	}
+	// Filled here rather than at each caller. Four separate places emit a chat list, and when this
+	// was applied by the callers instead, two of them were missed - so the startup sync published a
+	// list with every chat unmuted and the notification bell rang for muted groups.
+	return db.withMutes(ctx, accountID, peers)
+}
+
+// withMutes fills MuteUntil on a list of peers.
+//
+// A second small query rather than a join: mute lives in its own table precisely to stay out of the
+// peers upsert, and peerColumns is shared by several statements that would all have to grow an alias.
+// There is one row per muted dialog, against the megabyte the peer list itself costs.
+func (db *DB) withMutes(ctx context.Context, accountID string, peers []Peer) ([]Peer, error) {
+	if len(peers) == 0 {
+		return peers, nil
+	}
+	mutes, err := db.PeerMutes(ctx, accountID)
+	if err != nil || len(mutes) == 0 {
+		// A failure here is not worth losing the peer list over: an unmuted-looking chat is a worse
+		// outcome than no chat list at all only if you squint.
+		return peers, nil
+	}
+	for i := range peers {
+		if until, ok := mutes[peers[i].Key]; ok {
+			peers[i].MuteUntil = until
+		}
+	}
+	return peers, nil
 }
 
 // RecentPeersForBackfill returns at most limit peers that are active since cutoff and do not yet

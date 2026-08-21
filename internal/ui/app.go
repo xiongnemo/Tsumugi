@@ -220,15 +220,6 @@ func (a *App) Run(ctx context.Context) error {
 	if a.cfg.NeedsOnboarding() {
 		a.showOnboarding()
 	}
-	// Created here rather than letting Application make its own, so the bell has a Screen to ring
-	// through. Writing  to stdout instead would go to the descriptor tcell is drawing on, which is
-	// the corruption CLAUDE.md forbids.
-	screen, err := tcell.NewScreen()
-	if err != nil {
-		return err
-	}
-	a.screen = screen
-	a.app.SetScreen(screen)
 	go a.consumeEvents(ctx)
 	go func() {
 		<-ctx.Done()
@@ -340,6 +331,11 @@ func (a *App) build() {
 	// The composer's scroll has to be corrected after the editor's own cursor handling has
 	// run, which the changed callback is too early for; see clampComposerScroll.
 	a.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
+		// Captured rather than created. Passing our own screen to SetScreen made Application.Run
+		// skip its whole init block - the one that calls EnableMouse, EnablePaste and SetTitle -
+		// because that block only runs when a.screen is still nil. The visible result was mouse
+		// clicks no longer moving focus and multi-line pastes arriving a keystroke at a time.
+		a.screen = screen
 		a.clampComposerScroll()
 		// tview exposes no resize hook, and the draw pass is where a new width first becomes
 		// visible. applyLayoutTier is idempotent, so this costs a comparison per frame.

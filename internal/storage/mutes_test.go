@@ -73,3 +73,35 @@ func TestMuteActive(t *testing.T) {
 		}
 	}
 }
+
+// The bug this exists to prevent: mute was applied by the callers, four separate places emit a chat
+// list, and two of them were missed - so the startup sync published every chat as unmuted and the
+// bell rang for muted groups. Filling it in ListPeers means no caller can forget.
+func TestListPeersCarriesTheMute(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	if err := db.SavePeers(ctx, []Peer{
+		{AccountID: "acct", Key: "chat:1", Kind: "chat", ID: 1, Title: "Muted"},
+		{AccountID: "acct", Key: "chat:2", Kind: "chat", ID: 2, Title: "Loud"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetPeerMute(ctx, "acct", "chat:1", 2147483647); err != nil {
+		t.Fatal(err)
+	}
+
+	peers, err := db.ListPeers(ctx, "acct")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKey := map[string]Peer{}
+	for _, p := range peers {
+		byKey[p.Key] = p
+	}
+	if !MuteActive(byKey["chat:1"].MuteUntil, time.Now()) {
+		t.Errorf("chat:1 came back unmuted: MuteUntil = %d", byKey["chat:1"].MuteUntil)
+	}
+	if MuteActive(byKey["chat:2"].MuteUntil, time.Now()) {
+		t.Errorf("chat:2 came back muted: MuteUntil = %d", byKey["chat:2"].MuteUntil)
+	}
+}

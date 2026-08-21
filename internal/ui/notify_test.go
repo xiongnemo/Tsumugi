@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
+
 	"github.com/nemo/Tsumugi/internal/settings"
 	"github.com/nemo/Tsumugi/internal/telegram"
 )
@@ -170,4 +172,51 @@ func TestNotifyOptionIndexFallsBackToTheBell(t *testing.T) {
 			t.Fatalf("index %d maps to %q, want %q", i, notifyValueAt(i), option.Value)
 		}
 	}
+}
+
+// The bell blocked the whole interface. On Windows tcell's console screen implements Beep with
+// MessageBeep, which falls back to the PC speaker and blocks for the length of the sound - and
+// applyEvent runs on the event-loop goroutine, so every ring froze the UI until it finished.
+func TestRingBellDoesNotBlockTheCaller(t *testing.T) {
+	app := newCaptureTestApp()
+	release := make(chan struct{})
+	rang := make(chan struct{}, 1)
+	app.screen = &blockingBeepScreen{release: release, rang: rang}
+
+	done := make(chan struct{})
+	go func() {
+		app.ringBell()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ringBell blocked on the beep; the event loop would be frozen for its duration")
+	}
+
+	// It still has to actually ring.
+	close(release)
+	select {
+	case <-rang:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the bell never reached the screen")
+	}
+}
+
+// blockingBeepScreen is a tcell.Screen whose Beep blocks until released, standing in for Windows'
+// synchronous MessageBeep.
+type blockingBeepScreen struct {
+	tcell.Screen
+	release chan struct{}
+	rang    chan struct{}
+}
+
+func (s *blockingBeepScreen) Beep() error {
+	<-s.release
+	select {
+	case s.rang <- struct{}{}:
+	default:
+	}
+	return nil
 }

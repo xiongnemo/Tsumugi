@@ -73,5 +73,5 @@ func (c *GotdClient) emitChatList(ctx context.Context, accountID string, events 
 		// here is not worth a red status line the user cannot act on. The next message retries.
 		return
 	}
-	sendEvent(ctx, events, Event{Kind: EventChats, Chats: c.applyMutes(ctx, accountID, peersToChats(peers))})
+	sendEvent(ctx, events, Event{Kind: EventChats, Chats: peersToChats(peers)})
 }

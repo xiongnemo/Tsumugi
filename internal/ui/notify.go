@@ -100,11 +100,19 @@ func (a *App) chatTitleFor(peerKey string) string {
 // Through tcell's own Screen rather than by writing \a to stdout: tcell owns the terminal while the
 // TUI runs, and writing to the same descriptor from anywhere else is what corrupts a frame. This is
 // also the only notification mechanism a bare Linux console has.
+//
+// On its own goroutine, because on Windows tcell's console screen implements Beep with
+// MessageBeep(MB_SIMPLEBEEP), and that falls back to the PC speaker when no wave device will take
+// it - a synchronous call that blocks for as long as the sound lasts. This runs from applyEvent, on
+// the event-loop goroutine, so blocking here freezes the whole interface for the duration of every
+// beep. Screen.Beep is safe to call from elsewhere: it either writes one byte or makes a
+// thread-safe Win32 call.
 func (a *App) ringBell() {
-	if a.screen == nil {
+	screen := a.screen
+	if screen == nil {
 		return
 	}
-	_ = a.screen.Beep()
+	go func() { _ = screen.Beep() }()
 }
 
 // postDesktopNotification emits an OSC escape sequence for terminals that implement one.

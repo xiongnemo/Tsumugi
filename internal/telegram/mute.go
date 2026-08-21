@@ -3,12 +3,10 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/gotd/td/tg"
 
 	"github.com/nemo/Tsumugi/internal/i18n"
-	"github.com/nemo/Tsumugi/internal/storage"
 )
 
 // muteForever is the deadline used when muting with no end.
@@ -85,25 +83,4 @@ func (c *GotdClient) mutePeer(ctx context.Context, accountID string, api *tg.Cli
 	}
 	sendEvent(ctx, events, Event{Kind: EventStatus, PeerKey: command.PeerKey, StatusMsg: i18n.M(status)})
 	c.scheduleChatListRefresh(ctx, accountID, events)
-}
-
-// applyMutes marks the muted chats in a list.
-//
-// Applied here rather than joined into ListPeers so the peer query and its shared column list stay
-// untouched: mute is a separate table precisely to keep it out of that path.
-func (c *GotdClient) applyMutes(ctx context.Context, accountID string, chats []Chat) []Chat {
-	if c.store == nil || len(chats) == 0 {
-		return chats
-	}
-	mutes, err := c.store.PeerMutes(ctx, accountID)
-	if err != nil || len(mutes) == 0 {
-		return chats
-	}
-	now := time.Now()
-	for i := range chats {
-		if until, ok := mutes[chats[i].ID]; ok {
-			chats[i].Muted = storage.MuteActive(until, now)
-		}
-	}
-	return chats
 }
