@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gotd/td/tg"
+	"github.com/gotd/td/tgerr"
 
 	"github.com/nemo/Tsumugi/internal/debuglog"
 	"github.com/nemo/Tsumugi/internal/i18n"
@@ -168,6 +169,13 @@ func (c *GotdClient) forwardMessages(ctx context.Context, accountID string, api 
 			"ids":     ids,
 			"raw_err": err.Error(),
 		})
+		// CHAT_ADMIN_REQUIRED here almost always means the destination is a broadcast channel the
+		// account cannot post to, which the raw error code says nothing about: the picker lists every
+		// dialog, and a channel you only read looks exactly like one you can write to.
+		if tgerr.Is(err, "CHAT_ADMIN_REQUIRED") {
+			sendEvent(ctx, events, Event{Kind: EventStatus, PeerKey: cmd.PeerKey, StatusMsg: i18n.M(i18n.KeyStatusForwardNotAllowed)})
+			return
+		}
 		sendEvent(ctx, events, Event{Kind: EventError, PeerKey: cmd.PeerKey, Error: rpcError("forward messages", err)})
 		return
 	}
