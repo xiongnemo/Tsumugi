@@ -135,6 +135,11 @@ func (c *GotdClient) lazyBackfill(ctx context.Context, accountID string, api *tg
 				sendBackgroundState(ctx, events, BackgroundState{Kind: BackgroundPaused})
 				break
 			}
+			if c.backfillSkips.skipped(p.Key) {
+				// Failed terminally earlier this session. Retrying it is what turned the backfill
+				// into a busy loop against fifty unreachable peers.
+				continue
+			}
 			sendBackgroundState(ctx, events, BackgroundState{
 				Kind:    BackgroundBackfill,
 				Current: i + 1,

@@ -47,7 +47,9 @@ type GotdClient struct {
 	echoByRandom map[int64]pendingEcho
 	echoByServer map[int]pendingEcho
 	// chatRefresh coalesces chat-list rebuilds; see chat_refresh.go.
-	chatRefresh          chatListRefresher
+	chatRefresh chatListRefresher
+	// backfillSkips remembers peers the backfill must stop asking about; see backfill_skip.go.
+	backfillSkips        backfillSkips
 	peerHistoryMu        sync.Mutex
 	peerHistoryLocks     map[string]*sync.Mutex
 	fgLoadMu             sync.Mutex
@@ -581,7 +583,25 @@ func (c *GotdClient) syncPeerHistory(ctx context.Context, accountID string, api 
 		}
 		history, err := c.messagesGetHistory(ctx, api, &tg.MessagesGetHistoryRequest{Peer: input, OffsetID: offsetID, Limit: 100})
 		if err != nil {
-			sendEvent(ctx, events, Event{Kind: EventError, Error: fmt.Errorf("sync history %s: %w", p.Title, err)})
+			// The title alone is not a diagnosis: it took a database probe to find out which row and
+			// which InputPeer shape a CHANNEL_INVALID storm was even about. describeInputPeer reports
+			// the type and whether a hash is present, never the hash itself.
+			if terminalBackfillError(err) {
+				// Nothing about this peer will change by asking again in three seconds. One session
+				// logged 951 CHANNEL_INVALID errors across fifty peers and buried every other error.
+				c.backfillSkips.skip(p.Key, err.Error())
+			}
+			debuglog.Log("sync_history_failed", map[string]any{
+				"peer_key":  p.Key,
+				"kind":      p.Kind,
+				"subtitle":  p.Subtitle,
+				"folder_id": p.FolderID,
+				"offset_id": offsetID,
+				"input":     describeInputPeer(input),
+				"terminal":  terminalBackfillError(err),
+				"raw_err":   err.Error(),
+			})
+			sendEvent(ctx, events, Event{Kind: EventError, PeerKey: p.Key, Error: fmt.Errorf("sync history %s: %w", p.Title, err)})
 			return
 		}
 		msgs := c.normalizeMessagesWithPreview(ctx, api, accountID, p.Key, history, false)
@@ -977,12 +997,34 @@ func (c *GotdClient) registerUpdateHandlers(dispatcher *tg.UpdateDispatcher, acc
 	})
 }
 
+// usableAccessHash is an entity's access hash, or zero when the entity is a "min" one.
+//
+// Telegram sends min constructors for peers it is only telling you about in passing - the author of a
+// forwarded message, a channel referenced from somewhere you are not a member of. Their access_hash
+// is non-zero but only valid in the context it arrived in: using it for an ordinary request answers
+// CHANNEL_INVALID. Storing it therefore overwrites a working hash with one that cannot work, and the
+// "never overwrite with zero" guard in SavePeers does not catch it because the value is not zero.
+//
+// TDLib draws the same line: its min branch updates the title, the photo and the flags and never
+// touches access_hash, and it logs an error if a *non*-min entity arrives without one. When only a
+// min peer is known, the protocol's way to reach it is inputPeerChannelFromMessage - referencing it
+// through the message it was seen in - not a hash of its own.
+//
+// Returning zero here means "keep whatever we already had", which is exactly what the storage guard
+// then does.
+func usableAccessHash(hash int64, min bool) int64 {
+	if min {
+		return 0
+	}
+	return hash
+}
+
 func normalizeChat(accountID string, chat tg.ChatClass) (storage.Peer, Chat, bool) {
 	switch c := chat.(type) {
 	case *tg.Chat:
 		return peer(accountID, "chat", c.ID, 0, c.Title, ""), Chat{ID: peerKey("chat", c.ID), Title: c.Title, Subtitle: "group"}, true
 	case *tg.Channel:
-		return peer(accountID, "channel", c.ID, c.AccessHash, c.Title, c.Username), Chat{ID: peerKey("channel", c.ID), Title: c.Title, Subtitle: "channel"}, true
+		return peer(accountID, "channel", c.ID, usableAccessHash(c.AccessHash, c.Min), c.Title, c.Username), Chat{ID: peerKey("channel", c.ID), Title: c.Title, Subtitle: "channel"}, true
 	case *tg.ChatForbidden:
 		return peer(accountID, "chat", c.ID, 0, c.Title, ""), Chat{ID: peerKey("chat", c.ID), Title: c.Title, Subtitle: "forbidden group"}, true
 	case *tg.ChannelForbidden:
@@ -1004,7 +1046,7 @@ func normalizeUser(accountID string, user tg.UserClass) (storage.Peer, Chat, boo
 	if title == "" {
 		title = fmt.Sprintf("user %d", u.ID)
 	}
-	p := peer(accountID, "user", u.ID, u.AccessHash, title, u.Username)
+	p := peer(accountID, "user", u.ID, usableAccessHash(u.AccessHash, u.Min), title, u.Username)
 	p.Contact = u.Contact
 	return p, Chat{ID: peerKey("user", u.ID), Title: title, Subtitle: "private", Contact: u.Contact}, true
 }
@@ -1106,7 +1148,7 @@ func peerFromRef(accountID string, ref tg.PeerClass, entities entitiesByID) (sto
 		} else if user.Bot {
 			subtitle = "bot"
 		}
-		out := peer(accountID, "user", user.ID, user.AccessHash, title, user.Username)
+		out := peer(accountID, "user", user.ID, usableAccessHash(user.AccessHash, user.Min), title, user.Username)
 		out.Subtitle = subtitle
 		out.Contact = user.Contact
 		return out, true
@@ -1128,7 +1170,7 @@ func peerFromRef(accountID string, ref tg.PeerClass, entities entitiesByID) (sto
 		if channel != nil {
 			title = channel.Title
 			username = channel.Username
-			accessHash = channel.AccessHash
+			accessHash = usableAccessHash(channel.AccessHash, channel.Min)
 			if channel.Megagroup {
 				subtitle = "group"
 			}
