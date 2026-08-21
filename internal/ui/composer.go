@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"strconv"
 	"strings"
 
@@ -218,6 +219,37 @@ func (a *App) setComposerText(text string) {
 	a.composer.SetText(text, true)
 }
 
+// attachCommandPrefix introduces a typed attachment path.
+//
+// Deliberately not "/file". A leading slash is a Telegram bot command, so any name chosen there
+// could be one a bot really has, and intercepting it would silently eat a message the user meant to
+// send. A colon cannot be a bot command, and it is the prefix TUI clients already use for their own
+// commands.
+const attachCommandPrefix = ":file "
+
+// composerAttachCommand reports the path in a ":file <path>" line.
+//
+// Requires both the prefix and a file that exists. Swallowing a message because it happened to start
+// with those six characters would be far worse than making the user open the picker, so anything that
+// does not resolve is left alone and sent as ordinary text.
+func composerAttachCommand(raw string) (string, bool) {
+	line := strings.TrimSpace(raw)
+	if !strings.HasPrefix(line, attachCommandPrefix) {
+		return "", false
+	}
+	// Quotes are what a Windows path with spaces arrives wrapped in, from both Explorer and most
+	// shells.
+	path := strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, attachCommandPrefix)), `"'`)
+	if path == "" {
+		return "", false
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return "", false
+	}
+	return path, true
+}
+
 // submitComposer sends whatever is in the composer. This was TextArea's predecessor's
 // SetDoneFunc; TextArea has no such hook and consumes Enter itself, so the trigger lives in
 // App.capture now.
@@ -226,20 +258,39 @@ func (a *App) submitComposer() {
 		return
 	}
 	rawText := a.composer.GetText()
+	// A typed path is the fast way in for something copied from elsewhere; the picker is the
+	// discoverable one. Handled before anything else so the path never goes out as a message.
+	if path, ok := composerAttachCommand(rawText); ok {
+		a.setComposerText("")
+		a.stageAttachment(path)
+		a.syncComposerLayout()
+		return
+	}
 	text := strings.TrimSpace(rawText)
-	if text != "" {
+	// A staged attachment is sendable on its own: a photo with no caption is an ordinary message,
+	// and requiring text for it would be a rule no other client has.
+	if text != "" || a.attachment != nil {
 		replyToID := 0
 		if a.replyTarget != nil {
 			replyToID, _ = strconv.Atoi(a.replyTarget.ID)
 		}
 		entities := a.takeMentionEntitiesForSend(rawText, text)
-		a.commands <- telegram.Command{
+		command := telegram.Command{
 			Kind:            telegram.CommandSendText,
 			PeerKey:         a.currentChat,
 			Text:            text,
 			ReplyToID:       replyToID,
 			MentionEntities: entities,
 		}
+		if a.attachment != nil {
+			// One message carrying both: Telegram's caption is the message text, so text and file
+			// must not be sent as two.
+			command.Kind = telegram.CommandSendMedia
+			command.MediaPath = a.attachment.Path
+			command.MediaAsFile = a.attachment.AsFile
+			a.clearAttachment()
+		}
+		a.commands <- command
 		// Cancel any pending draft save: the text is on its way out and the client clears the
 		// server-side draft once the send is confirmed.
 		if a.draftTimer != nil {

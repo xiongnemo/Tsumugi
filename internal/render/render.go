@@ -467,6 +467,7 @@ func FooterKeys(state FooterState) string {
 		i18n.T(i18n.KeyUIFooterEnter),
 		i18n.T(i18n.KeyUIFooterSend),
 		i18n.T(i18n.KeyUIFooterCompose),
+		i18n.T(i18n.KeyUIFooterAttach),
 		i18n.T(i18n.KeyUIFooterSearch),
 	}
 	if state.MessagePaneFocused {

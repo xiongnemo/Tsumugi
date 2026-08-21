@@ -88,6 +88,16 @@ type App struct {
 	// proxyOverlay is the Settings -> Network panel. Same shape as a settings section, so it shares
 	// settingsOverlay and the section navigation.
 	proxyOverlay *settingsOverlay
+	// Attach picker state, plus the file staged for the next send. attachment outlives the picker:
+	// it sits in the composer title until the message goes out.
+	attachList    *tview.List
+	attachInput   *tview.InputField
+	attachPreview *tview.TextView
+	attachLayout  *tview.Flex
+	attachRows    []attachRow
+	attachDir     string
+	attachAsFile  bool
+	attachment    *attachment
 	// storageBytes is the last known database size, shown by the storage settings section. Cached
 	// because it is read off the UI thread and has to survive the panel being rebuilt.
 	storageBytes     int64
@@ -422,6 +432,11 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 		if a.dismissTopOverlay() {
 			return nil
 		}
+		// A staged attachment is the most recent thing the user did, so it unwinds first.
+		if a.clearAttachment() {
+			a.setStatusMsg(i18n.KeyStatusAttachmentCleared)
+			return nil
+		}
 		// Clearing a pending mark set comes before falling back to the chat list, so Esc
 		// always has an obvious local meaning first.
 		if a.clearForwardMarks() {
@@ -507,6 +522,14 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 			a.openForwardPicker(true)
 			return nil
 		}
+	case 'a':
+		// Mirrors f/F: the mode is chosen before the picker opens, because once it is open the
+		// filter field owns every letter key. Ctrl+F flips it in place.
+		a.openAttachPicker(false)
+		return nil
+	case 'A':
+		a.openAttachPicker(true)
+		return nil
 	case 'G':
 		if focus == a.messages {
 			a.jumpToLatest()
@@ -859,6 +882,9 @@ func (a *App) refreshChats() {
 			a.messages.SetGroupReadMarks(a.currentGroupRead)
 			a.chatsHighlightPeer = peerID
 			a.clearReplyTarget()
+			// A file staged for one chat must not follow the user into another: that is a mis-send
+			// with no warning, and the same reason the reply target is cleared here.
+			a.clearAttachment()
 			a.messages.SetPinnedBanner("")
 			a.pinnedCache = nil
 			a.pinnedCachePeer = ""
@@ -1490,17 +1516,9 @@ func (a *App) runMessageAction(action string, msg telegram.Message) {
 func (a *App) setReplyTarget(msg telegram.Message) {
 	msg.Media.PreviewText = ""
 	a.replyTarget = &msg
-	label := strings.TrimSpace(msg.Text)
-	if label == "" {
-		label = msg.Media.Label
-	}
-	if label == "" {
-		label = "message " + msg.ID
-	}
-	if len(label) > 40 {
-		label = label[:40] + "..."
-	}
-	a.composer.SetTitle(" " + i18n.Tf(i18n.KeyUIReplyTo, label) + " ")
+	// The title is built in one place now, because a staged attachment lives there too and the two
+	// used to overwrite each other.
+	a.applyComposerTitle()
 	a.app.SetFocus(a.composer)
 	a.updateFocusStyle()
 	a.setStatusMsg(i18n.KeyStatusReplyTargetSet)
@@ -1508,9 +1526,7 @@ func (a *App) setReplyTarget(msg telegram.Message) {
 
 func (a *App) clearReplyTarget() {
 	a.replyTarget = nil
-	if a.composer != nil {
-		a.composer.SetTitle(" " + i18n.T(i18n.KeyUICompose) + " ")
-	}
+	a.applyComposerTitle()
 }
 
 func copyText(text string) error {

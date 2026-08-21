@@ -19,6 +19,7 @@ type GlyphSet struct {
 	Typing   string
 	ReadOne  string
 	ReadBoth string
+	Attach   string
 }
 
 var unicodeGlyphs = GlyphSet{
@@ -28,6 +29,7 @@ var unicodeGlyphs = GlyphSet{
 	Typing:   "✎",
 	ReadOne:  "✓",
 	ReadBoth: "✓✓",
+	Attach:   "📎",
 }
 
 var asciiGlyphs = GlyphSet{
@@ -37,6 +39,7 @@ var asciiGlyphs = GlyphSet{
 	Typing:   "~",
 	ReadOne:  ".",
 	ReadBoth: ":",
+	Attach:   "@",
 }
 
 // glyphsCache is resolved once: the terminal cannot change identity mid-run, and Draw calls this

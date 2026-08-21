@@ -119,6 +119,19 @@ behaviour you may want to change.
   history gap hints appear in the message pane title.
 - Text message sending for the selected peer, including reply targets from the
   message action menu.
+- Sending media. **`a`** opens a keyboard-driven file browser with a live preview
+  of the highlighted image; **`A`** opens it in "send as file" mode, and `Ctrl+F`
+  flips between the two while it is open. The first row is the **clipboard image**,
+  which is how a screenshot gets sent without ever touching a file. A path copied
+  from elsewhere goes in the composer as `:file <path>` - a colon rather than a
+  slash, because a slash is a Telegram bot command and intercepting one would
+  silently eat a message. The staged file shows in the composer border next to any
+  reply target, and `Ctrl+J` sends file and caption as one message. Photos go as
+  photos, GIFs stay animated, and anything else goes as a document with its
+  filename. Videos get width, height and duration when `ffprobe` is present and are
+  sent as plain documents when it is not - ffmpeg stays optional. Upload progress
+  shows in the status bar; a failed upload leaves a retryable row that still knows
+  its local file.
 - Per-chat drafts, synced with Telegram. Unsent text is saved as you type, restored
   when you reopen the chat, and cleared once the message goes out. Drafts are stored
   encrypted locally so they survive a quit, and a draft changed in another client is
