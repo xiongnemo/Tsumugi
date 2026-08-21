@@ -80,6 +80,7 @@ type GotdClient struct {
 	editSend   func(context.Context, *tg.MessagesEditMessageRequest) (tg.UpdatesClass, error)
 	voteSend   func(context.Context, *tg.MessagesSendVoteRequest) (tg.UpdatesClass, error)
 	pinSend    func(context.Context, *tg.MessagesUpdatePinnedMessageRequest) (tg.UpdatesClass, error)
+	notifySend func(context.Context, *tg.AccountUpdateNotifySettingsRequest) (bool, error)
 	// cleanupRunning stops a second cleanup starting while one is in flight. VACUUM holds the only
 	// database connection for as long as it runs, so two of them would queue up behind each other
 	// and double an already long freeze.
@@ -336,6 +337,8 @@ func (c *GotdClient) loadDialogBatch(ctx context.Context, accountID string, api 
 		chats = append(chats, chat)
 		last = peer
 		if d, ok := dialog.(*tg.Dialog); ok {
+			// The only place notify settings ever arrive. See mute.go.
+			c.storeDialogMute(ctx, accountID, peer.Key, d.NotifySettings)
 			if draft, ok := draftFromDialog(accountID, peer.Key, d); ok {
 				drafts = append(drafts, draft)
 			}
@@ -1347,6 +1350,14 @@ func (c *GotdClient) consumeCommands(ctx context.Context, accountID string, api 
 				// Must be `go`: forwarding is a network round trip and the command loop
 				// serves every other interaction.
 				go c.forwardMessages(ctx, accountID, api, events, command)
+			case CommandPinDialog:
+				go c.pinDialog(ctx, accountID, api, events, command)
+			case CommandArchiveDialog:
+				go c.archiveDialog(ctx, accountID, api, events, command)
+			case CommandLeaveChat:
+				go c.leaveChat(ctx, accountID, api, events, command)
+			case CommandMutePeer:
+				go c.mutePeer(ctx, accountID, api, events, command)
 			case CommandPinMessage:
 				go c.pinMessage(ctx, accountID, api, events, command)
 			case CommandSendVote:

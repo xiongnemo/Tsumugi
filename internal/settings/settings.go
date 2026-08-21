@@ -22,7 +22,24 @@ const (
 	KeyRetentionDays = "retention_days"
 	// KeyBackfillDays is how deep the background prefetch reaches. Zero turns it off.
 	KeyBackfillDays = "backfill_days"
+	// KeyNotify is how an arriving message announces itself.
+	KeyNotify = "notify"
 )
+
+// How an incoming message announces itself.
+//
+// The bell is the default because it is the only mechanism a bare Linux console has, and it needs no
+// capability guessing. The desktop option is opt-in rather than detected: a terminal that does not
+// implement the escape sequence prints it as garbage into the middle of the interface, and
+// TERM_PROGRAM sniffing is not reliable enough to bet the display on.
+const (
+	NotifyOff     = "off"
+	NotifyBell    = "bell"
+	NotifyDesktop = "bell+desktop"
+)
+
+// DefaultNotify is the terminal bell.
+const DefaultNotify = NotifyBell
 
 // DefaultRetentionDays is how much history is kept when nothing has been chosen.
 //
@@ -55,6 +72,8 @@ type Settings struct {
 	RetentionDays int
 	// BackfillDays is how many days back the background prefetch reaches; BackfillOff disables it.
 	BackfillDays int
+	// Notify is one of NotifyOff, NotifyBell or NotifyDesktop.
+	Notify string
 }
 
 func Defaults() Settings {
@@ -65,6 +84,7 @@ func Defaults() Settings {
 		JumpToFirstUnread: true,
 		RetentionDays:     DefaultRetentionDays,
 		BackfillDays:      DefaultBackfillDays,
+		Notify:            DefaultNotify,
 	}
 }
 
@@ -94,6 +114,7 @@ func Load(ctx context.Context, db *storage.DB) Settings {
 	localeFromDB := false
 	inlineFromDB := false
 	jumpFromDB := false
+	notifyFromDB := false
 	out.RetentionDays = daysSetting(ctx, db, KeyRetentionDays, "TSUMUGI_RETENTION_DAYS", DefaultRetentionDays)
 	out.BackfillDays = daysSetting(ctx, db, KeyBackfillDays, "TSUMUGI_BACKFILL_DAYS", DefaultBackfillDays)
 	if db != nil {
@@ -112,6 +133,10 @@ func Load(ctx context.Context, db *storage.DB) Settings {
 			out.JumpToFirstUnread = v == "1" || strings.EqualFold(v, "true")
 			jumpFromDB = true
 		}
+		if v, ok, err := db.GetSetting(ctx, KeyNotify); err == nil && ok && strings.TrimSpace(v) != "" {
+			out.Notify = strings.TrimSpace(v)
+			notifyFromDB = true
+		}
 	}
 	if !localeFromDB {
 		if env := strings.TrimSpace(os.Getenv("TSUMUGI_LOCALE")); env != "" {
@@ -126,6 +151,12 @@ func Load(ctx context.Context, db *storage.DB) Settings {
 	if env := strings.TrimSpace(os.Getenv("TSUMUGI_OUTGOING_LAYOUT")); env != "" {
 		out.OutgoingLayout = env
 	}
+	if !notifyFromDB {
+		if env := strings.TrimSpace(os.Getenv("TSUMUGI_NOTIFY")); env != "" {
+			out.Notify = env
+		}
+	}
+	out.Notify = normalizeNotify(out.Notify)
 	// Default is on, so the env override has to be able to turn it off as well as on.
 	if !jumpFromDB {
 		if env := strings.TrimSpace(os.Getenv("TSUMUGI_JUMP_UNREAD")); env != "" {
@@ -137,6 +168,19 @@ func Load(ctx context.Context, db *storage.DB) Settings {
 	}
 	i18n.SetLocale(out.Locale)
 	return out
+}
+
+// normalizeNotify keeps an unknown or empty value from silently disabling notifications: a typo in a
+// shell profile should fall back to the default, not to silence.
+func normalizeNotify(value string) string {
+	switch strings.TrimSpace(strings.ToLower(value)) {
+	case NotifyOff:
+		return NotifyOff
+	case NotifyDesktop:
+		return NotifyDesktop
+	default:
+		return NotifyBell
+	}
 }
 
 func (s Settings) Save(ctx context.Context, db *storage.DB) error {
@@ -171,6 +215,9 @@ func (s Settings) Save(ctx context.Context, db *storage.DB) error {
 		return err
 	}
 	if err := db.SetSetting(ctx, KeyBackfillDays, strconv.Itoa(s.BackfillDays)); err != nil {
+		return err
+	}
+	if err := db.SetSetting(ctx, KeyNotify, normalizeNotify(s.Notify)); err != nil {
 		return err
 	}
 	i18n.SetLocale(s.Locale)

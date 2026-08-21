@@ -34,7 +34,9 @@ func TestSettingsSaveAndLoadRoundTrip(t *testing.T) {
 		t.Fatalf("defaults = %+v", loaded)
 	}
 
-	want := Settings{Locale: "zh", InlineAnim: true, OutgoingLayout: "im"}
+	// Notify has to be spelled out: an empty value normalizes to the default, which is exactly the
+	// behaviour that keeps a typo in a shell profile from silencing notifications.
+	want := Settings{Locale: "zh", InlineAnim: true, OutgoingLayout: "im", Notify: DefaultNotify}
 	if err := want.Save(ctx, db); err != nil {
 		t.Fatal(err)
 	}

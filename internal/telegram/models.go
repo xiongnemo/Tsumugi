@@ -175,6 +175,9 @@ type Chat struct {
 	PreviewArg    string
 	LastMessageAt time.Time
 	TopMessageID  int
+	// Muted mirrors Telegram's notify settings for this peer. Read from its own table, because a
+	// peers column would be blanked by the next incoming message; see storage/mutes.go.
+	Muted bool
 }
 
 type Folder struct {
@@ -236,6 +239,12 @@ const (
 	CommandSendVote CommandKind = "send_vote"
 	// CommandPinMessage pins the message, or unpins it when Unpin is set.
 	CommandPinMessage CommandKind = "pin_message"
+	// CommandMutePeer mutes or unmutes a chat.
+	CommandMutePeer CommandKind = "mute_peer"
+	// Chat-level operations. Unpin doubles as the undo for each of them.
+	CommandPinDialog     CommandKind = "pin_dialog"
+	CommandArchiveDialog CommandKind = "archive_dialog"
+	CommandLeaveChat     CommandKind = "leave_chat"
 )
 
 type Command struct {
@@ -274,6 +283,8 @@ type Command struct {
 	PollOptions [][]byte
 	// Unpin turns CommandPinMessage into an unpin.
 	Unpin bool
+	// Mute is the requested state for CommandMutePeer.
+	Mute bool
 }
 
 type MentionSuggestion struct {

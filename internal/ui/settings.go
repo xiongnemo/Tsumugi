@@ -96,6 +96,7 @@ func (a *App) settingsGeneralForm(overlay *settingsOverlay) *tview.Form {
 	form.AddDropDown(i18n.T(i18n.KeySettingsLanguage), []string{"English (en)", "中文 (zh)"}, localeIndex, nil).
 		AddCheckbox(i18n.T(i18n.KeySettingsInlineAnim), a.settings.InlineAnim, nil).
 		AddCheckbox(i18n.T(i18n.KeySettingsJumpUnread), a.settings.JumpToFirstUnread, nil).
+		AddDropDown(i18n.T(i18n.KeySettingsNotify), notifyOptionLabels(), notifyOptionIndex(a.settings.Notify), nil).
 		AddButton(i18n.T(i18n.KeySettingsSave), func() {
 			a.saveGeneralSettings(form, overlay)
 		}).
@@ -116,6 +117,7 @@ func (a *App) saveGeneralSettings(form *tview.Form, overlay *settingsOverlay) {
 	}
 	inlineAnim := form.GetFormItem(1).(*tview.Checkbox).IsChecked()
 	jumpUnread := form.GetFormItem(2).(*tview.Checkbox).IsChecked()
+	notifyIndex, _ := form.GetFormItem(3).(*tview.DropDown).GetCurrentOption()
 	// Rebuilt as a literal, so every field has to be carried across explicitly: omitting one
 	// silently resets the user's choice whenever they touch any other General setting. The storage
 	// day counts live in their own section and are carried through untouched here.
@@ -126,6 +128,7 @@ func (a *App) saveGeneralSettings(form *tview.Form, overlay *settingsOverlay) {
 		JumpToFirstUnread: jumpUnread,
 		RetentionDays:     a.settings.RetentionDays,
 		BackfillDays:      a.settings.BackfillDays,
+		Notify:            notifyValueAt(notifyIndex),
 	}
 	if err := next.Save(context.Background(), a.db); err != nil {
 		a.setSettingsStatus("[red]" + err.Error())

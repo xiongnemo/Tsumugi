@@ -120,7 +120,7 @@ func (c *GotdClient) refreshChatsFromStore(ctx context.Context, accountID string
 	if saved, err := c.store.ListDialogFilters(ctx, accountID); err == nil && len(saved) > 0 {
 		folders = withArchiveFolder(storageFiltersToFolders(saved))
 	}
-	sendEvent(ctx, events, Event{Kind: EventChats, Chats: peersToChats(peers), Folders: folders})
+	sendEvent(ctx, events, Event{Kind: EventChats, Chats: c.applyMutes(ctx, accountID, peersToChats(peers)), Folders: folders})
 }
 
 func uniquePeers(peers []storage.Peer) []storage.Peer {

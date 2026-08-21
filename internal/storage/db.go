@@ -173,6 +173,13 @@ func (db *DB) migrate(ctx context.Context) error {
 			updated_at TEXT NOT NULL,
 			PRIMARY KEY(account_id, peer_key)
 		);`,
+		`CREATE TABLE IF NOT EXISTS peer_mutes (
+			account_id TEXT NOT NULL,
+			peer_key TEXT NOT NULL,
+			mute_until INTEGER NOT NULL DEFAULT 0,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY(account_id, peer_key)
+		);`,
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, datetime('now'));`,
 	}
 

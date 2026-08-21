@@ -98,6 +98,16 @@ type App struct {
 	attachDir     string
 	attachAsFile  bool
 	attachment    *attachment
+	// Chat actions overlay state.
+	chatOpsList *tview.List
+	chatOpsRows []chatOp
+	chatOpsPeer string
+	// screen is kept so the bell can go through tcell's own writer rather than a second one; see
+	// notify.go. lastNotifyAt throttles alerts to one per burst.
+	screen       tcell.Screen
+	lastNotifyAt time.Time
+	// notifyNow replaces the clock in tests; see notifyClock.
+	notifyNow func() time.Time
 	// Poll vote overlay state. pollMarked is only used by multiple-choice polls.
 	pollList      *tview.List
 	pollSummary   *telegram.PollSummary
@@ -210,6 +220,15 @@ func (a *App) Run(ctx context.Context) error {
 	if a.cfg.NeedsOnboarding() {
 		a.showOnboarding()
 	}
+	// Created here rather than letting Application make its own, so the bell has a Screen to ring
+	// through. Writing  to stdout instead would go to the descriptor tcell is drawing on, which is
+	// the corruption CLAUDE.md forbids.
+	screen, err := tcell.NewScreen()
+	if err != nil {
+		return err
+	}
+	a.screen = screen
+	a.app.SetScreen(screen)
 	go a.consumeEvents(ctx)
 	go func() {
 		<-ctx.Done()
@@ -549,6 +568,9 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 			}
 			return nil
 		}
+	case 'm':
+		a.openChatOps()
+		return nil
 	case 'a':
 		// Mirrors f/F: the mode is chosen before the picker opens, because once it is open the
 		// filter field owns every letter key. Ctrl+F flips it in place.
@@ -703,6 +725,9 @@ func (a *App) applyEvent(event telegram.Event) {
 			a.applyMessagesPaneTitle()
 		}
 	}
+	// Before the current-chat filter below: the whole point of a notification is the chats that are
+	// not on screen.
+	a.notifyArrival(event)
 	messageEventForCurrentChat := event.PeerKey == "" || event.PeerKey == a.currentChat
 	if messageEventForCurrentChat {
 		a.messages.RemoveIDs(event.RemoveMessageIDs)

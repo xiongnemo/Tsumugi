@@ -451,6 +451,33 @@ const (
 	KeyStatusUnpinned     = "status.unpinned"
 	KeyStatusPinNotSynced = "status.pin_not_synced"
 
+	// Mute and notifications.
+	KeyStatusMuted          = "status.muted"
+	KeyStatusUnmuted        = "status.unmuted"
+	KeySettingsNotify       = "settings.notify"
+	KeySettingsNotifyOff    = "settings.notify_off"
+	KeySettingsNotifyBell   = "settings.notify_bell"
+	KeySettingsNotifyDeskop = "settings.notify_desktop"
+
+	// Chat-level operations.
+	KeyChatOpsTitle           = "chat_ops.title"
+	KeyChatOpsHint            = "chat_ops.hint"
+	KeyChatOpsMute            = "chat_ops.mute"
+	KeyChatOpsUnmute          = "chat_ops.unmute"
+	KeyChatOpsPin             = "chat_ops.pin"
+	KeyChatOpsUnpin           = "chat_ops.unpin"
+	KeyChatOpsArchive         = "chat_ops.archive"
+	KeyChatOpsUnarchive       = "chat_ops.unarchive"
+	KeyChatOpsLeave           = "chat_ops.leave"
+	KeyChatOpsLeaveConfirm    = "chat_ops.leave_confirm"
+	KeyChatOpsLeaveBody       = "chat_ops.leave_body"
+	KeyStatusChatPinned       = "status.chat_pinned"
+	KeyStatusChatUnpinned     = "status.chat_unpinned"
+	KeyStatusChatArchived     = "status.chat_archived"
+	KeyStatusChatUnarchived   = "status.chat_unarchived"
+	KeyStatusChatLeft         = "status.chat_left"
+	KeyStatusLeaveNotPossible = "status.leave_not_possible"
+
 	// Storage settings: how much history is kept, how much is prefetched, and applying both now.
 	KeySettingsStorage        = "settings.storage"
 	KeySettingsStorageDesc    = "settings.storage_desc"

@@ -58,6 +58,11 @@ func ChatRow(chat telegram.Chat, width int) string {
 	if chat.Unread > 0 {
 		title = fmt.Sprintf("%s (%d)", title, chat.Unread)
 	}
+	if chat.Muted {
+		// After the count rather than before the title: a muted chat still shows how much is
+		// unread, and the marker explains why nothing rang.
+		title = title + " " + Glyphs().Muted
+	}
 	if chat.Subtitle != "" {
 		title = title + " | " + chat.Subtitle
 	}

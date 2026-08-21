@@ -26,6 +26,7 @@ type GlyphSet struct {
 	PollEmpty  string
 	PollRight  string
 	PollWrong  string
+	Muted      string
 }
 
 var unicodeGlyphs = GlyphSet{
@@ -40,6 +41,7 @@ var unicodeGlyphs = GlyphSet{
 	PollEmpty:  "░",
 	PollRight:  "✓",
 	PollWrong:  "✗",
+	Muted:      "🔇",
 }
 
 var asciiGlyphs = GlyphSet{
@@ -54,6 +56,7 @@ var asciiGlyphs = GlyphSet{
 	PollEmpty:  "-",
 	PollRight:  "+",
 	PollWrong:  "x",
+	Muted:      "(m)",
 }
 
 // glyphsCache is resolved once: the terminal cannot change identity mid-run, and Draw calls this
