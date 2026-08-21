@@ -28,7 +28,9 @@ func classifyMessageMedia(media tg.MessageMediaClass) MediaAttachment {
 		}
 		return mediaAttachment("document", i18n.KeyMediaDocument)
 	case *tg.MessageMediaPoll:
-		return mediaAttachment("poll", i18n.KeyMediaPoll)
+		attachment := mediaAttachment("poll", i18n.KeyMediaPoll)
+		attachment.Poll = pollSummary(m)
+		return attachment
 	case *tg.MessageMediaContact:
 		return mediaAttachment("contact", i18n.KeyMediaContact)
 	case *tg.MessageMediaGeo:

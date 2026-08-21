@@ -428,6 +428,22 @@ const (
 	KeyStatusEditCancelled  = "status.edit_cancelled"
 	KeyStatusEditNotAllowed = "status.edit_not_allowed"
 
+	// Polls.
+	KeyPollTitle          = "poll.title"
+	KeyPollHint           = "poll.hint"
+	KeyPollQuiz           = "poll.quiz"
+	KeyPollClosed         = "poll.closed"
+	KeyPollAnonymous      = "poll.anonymous"
+	KeyPollPublic         = "poll.public"
+	KeyPollMultiple       = "poll.multiple"
+	KeyPollTotalVoters    = "poll.total_voters"
+	KeyPollNoVotes        = "poll.no_votes"
+	KeyActionVote         = "action.vote"
+	KeyStatusPollVoted    = "status.poll_voted"
+	KeyStatusPollNoChoice = "status.poll_no_choice"
+	KeyStatusPollClosed   = "status.poll_closed"
+	KeyStatusPollNone     = "status.poll_none"
+
 	// Storage settings: how much history is kept, how much is prefetched, and applying both now.
 	KeySettingsStorage        = "settings.storage"
 	KeySettingsStorageDesc    = "settings.storage_desc"

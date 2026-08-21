@@ -98,6 +98,12 @@ type App struct {
 	attachDir     string
 	attachAsFile  bool
 	attachment    *attachment
+	// Poll vote overlay state. pollMarked is only used by multiple-choice polls.
+	pollList      *tview.List
+	pollSummary   *telegram.PollSummary
+	pollMarked    map[int]bool
+	pollPeer      string
+	pollMessageID int
 	// editTarget is the message the composer is rewriting, if any. Mutually exclusive with a staged
 	// attachment: Telegram edits text, not media, so allowing both would silently drop one.
 	editTarget *telegram.Message
@@ -336,6 +342,11 @@ func (a *App) capture(event *tcell.EventKey) *tcell.EventKey {
 	// profile list just moved the selection and nothing ever crossed into the form.
 	if a.proxyOverlay != nil {
 		return a.captureProxyPanel(event)
+	}
+	if a.pollList != nil {
+		if out := a.capturePollVote(event); out == nil {
+			return nil
+		}
 	}
 	focus := a.app.GetFocus()
 	// Checked before the suggestion panel, which matches bare Enter/Tab with no modifier test
@@ -1285,6 +1296,9 @@ func (a *App) showMessageActions() {
 	if telegram.EditableMessage(msg) {
 		actions = append(actions, messageAction{ID: "edit", LabelKey: i18n.KeyActionEdit})
 	}
+	if pollVotable(msg) {
+		actions = append(actions, messageAction{ID: "vote", LabelKey: i18n.KeyActionVote})
+	}
 	if msg.Media.Kind != "" {
 		actions = append(actions,
 			messageAction{ID: "open_media", LabelKey: i18n.KeyActionOpenMedia},
@@ -1500,6 +1514,9 @@ func (a *App) runMessageAction(action string, msg telegram.Message) {
 		}
 	case "edit":
 		a.beginEdit(msg)
+		return
+	case "vote":
+		a.openPollVote(msg)
 		return
 	case "open_media":
 		if msg.Media.LocalPath == "" {

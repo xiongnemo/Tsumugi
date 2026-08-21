@@ -100,6 +100,9 @@ func MessageRowLines(message telegram.Message, width int, opts MessageRowOpts) [
 		lines = append(lines, viaLine)
 	}
 	lines = appendBodyLines(lines, "", text, width)
+	// A poll is several lines of its own, inserted here so the one place a message becomes lines
+	// stays the only place that knows about them.
+	lines = append(lines, PollLines(message.Media.Poll, width)...)
 	if reactLine := reactionsLine(message.Reactions, width); reactLine != "" {
 		lines = append(lines, Truncate(reactLine, width))
 	}

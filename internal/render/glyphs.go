@@ -20,26 +20,40 @@ type GlyphSet struct {
 	ReadOne  string
 	ReadBoth string
 	Attach   string
+	// Poll bar and quiz markers. The bar is drawn with block characters, which the standard console
+	// font has; the ASCII set is for terminals without them.
+	PollFilled string
+	PollEmpty  string
+	PollRight  string
+	PollWrong  string
 }
 
 var unicodeGlyphs = GlyphSet{
-	Marked:   "✓",
-	Pinned:   "📌",
-	Views:    "👁",
-	Typing:   "✎",
-	ReadOne:  "✓",
-	ReadBoth: "✓✓",
-	Attach:   "📎",
+	Marked:     "✓",
+	Pinned:     "📌",
+	Views:      "👁",
+	Typing:     "✎",
+	ReadOne:    "✓",
+	ReadBoth:   "✓✓",
+	Attach:     "📎",
+	PollFilled: "█",
+	PollEmpty:  "░",
+	PollRight:  "✓",
+	PollWrong:  "✗",
 }
 
 var asciiGlyphs = GlyphSet{
-	Marked:   "*",
-	Pinned:   "!",
-	Views:    "v",
-	Typing:   "~",
-	ReadOne:  ".",
-	ReadBoth: ":",
-	Attach:   "@",
+	Marked:     "*",
+	Pinned:     "!",
+	Views:      "v",
+	Typing:     "~",
+	ReadOne:    ".",
+	ReadBoth:   ":",
+	Attach:     "@",
+	PollFilled: "#",
+	PollEmpty:  "-",
+	PollRight:  "+",
+	PollWrong:  "x",
 }
 
 // glyphsCache is resolved once: the terminal cannot change identity mid-run, and Draw calls this

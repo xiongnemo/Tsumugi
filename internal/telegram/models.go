@@ -232,6 +232,8 @@ const (
 	CommandSendMedia CommandKind = "send_media"
 	// CommandEditMessage rewrites the text of a message already sent.
 	CommandEditMessage CommandKind = "edit_message"
+	// CommandSendVote answers a poll.
+	CommandSendVote CommandKind = "send_vote"
 )
 
 type Command struct {
@@ -265,6 +267,9 @@ type Command struct {
 	// original bytes by uploading a document instead of letting Telegram re-encode a photo.
 	MediaPath   string
 	MediaAsFile bool
+	// PollOptions are Telegram's opaque answer tokens, never indices: a poll can shuffle its
+	// options, and an index would vote for the wrong one.
+	PollOptions [][]byte
 }
 
 type MentionSuggestion struct {
@@ -350,6 +355,9 @@ type MediaAttachment struct {
 	Duration      int
 	LocalPath     string
 	PreviewText   string
+	// Poll carries a poll's question, options and counts. A pointer so the JSON column stays
+	// unchanged for every other media kind.
+	Poll *PollSummary `json:",omitempty"`
 }
 
 type Capability string
