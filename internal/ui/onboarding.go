@@ -168,7 +168,14 @@ func (a *App) showOnboarding() {
 				showIdentity()
 			}).
 			AddButton(i18n.T(i18n.KeyOnboardingBack), showAuthMode)
-		setPage(i18n.T(i18n.KeyOnboardingAPITitle), i18n.T(i18n.KeyOnboardingAPIBody), form)
+		// Bot mode gets its own wording. Anyone arriving from the HTTP Bot API reasonably expects a
+		// token to be enough, and the answer - that this client speaks MTProto, where the api_id is
+		// passed both to open the connection and to log the bot in - is the whole explanation.
+		bodyKey := i18n.KeyOnboardingAPIBody
+		if draft.AuthMode == config.AuthBot {
+			bodyKey = i18n.KeyOnboardingAPIBodyBot
+		}
+		setPage(i18n.T(i18n.KeyOnboardingAPITitle), i18n.T(bodyKey), form)
 	}
 
 	showIdentity = func() {

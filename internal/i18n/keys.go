@@ -259,6 +259,7 @@ const (
 	KeyOnboardingLoginQR                = "onboarding.login_qr"
 	KeyOnboardingAPITitle               = "onboarding.api_title"
 	KeyOnboardingAPIBody                = "onboarding.api_body"
+	KeyOnboardingAPIBodyBot             = "onboarding.api_body_bot"
 	KeyOnboardingAPIID                  = "onboarding.api_id"
 	KeyOnboardingAPIHash                = "onboarding.api_hash"
 	KeyOnboardingIdentityTitle          = "onboarding.identity_title"

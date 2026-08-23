@@ -35,12 +35,28 @@ go build -trimpath -o tsumugi ./cmd/tsumugi
 
 ## 快速开始
 
-1. 在 <https://my.telegram.org/apps> 创建 Telegram API 凭证，需要 **API ID** 和 **API hash**。
+1. 在 <https://my.telegram.org/apps> 创建 Telegram API 凭证，需要 **API ID** 和 **API hash**。想知道为什么客户端不能内置一份，见[为什么 Tsumugi 要你填 api_id](#为什么-tsumugi-要你填-api_id)。
 2. 运行 `tsumugi`。没有已保存凭证时，首次启动向导会依次询问界面语言、登录模式、API ID/hash 和手机号，然后交给 Telegram 的验证码与两步验证提示。
 3. `Tab` 在面板间循环：文件夹 → 会话列表 → 消息区 → 撰写框。`Enter` 打开高亮的会话，`i` 跳到撰写框，`?` 打开设置，`q` 退出。
 4. 凭证会加密保存在本地，之后启动直接进入会话列表。
 
 完整按键见[快捷键](#快捷键)。开箱不需要任何配置——下面各节是给代理、脚本化部署，以及你可能想调整的行为准备的。
+
+## 为什么 Tsumugi 要你填 api_id
+
+因为协议要求，而且借别人的迟早会让所有 Tsumugi 用户同时断线。
+
+**它标识的是「应用」，不是账号密码。** 每条 MTProto 会话的第一个请求都必须套在 `initConnection(api_id, device_model, ...)` 里，而 `api_id` 是它的**必填字段**，不是可选项。没有它不是功能受限，而是第一个请求就 `API_ID_INVALID`，之后什么都做不了。你的账号是另一回事：填完它之后照样要走手机号、验证码和两步验证。
+
+**每个客户端里都编译进了一个。** Telegram 安卓客户端把自己的写在公开源码里（`BuildVars.java`：`APP_ID = 4`）；Telegram Desktop 用构建参数传入 —— `-D TDESKTOP_API_ID=... -D TDESKTOP_API_HASH=...` —— 并且[官方文档](https://github.com/telegramdesktop/tdesktop/blob/dev/docs/api_credentials.md)对每个构建者的要求是：*"you're required to provide your own api_id and api_hash"*。api_hash 并不是密码学意义上的密钥，它是服务器用来区分不同应用的标签。Telegram Desktop 甚至硬编码了若干已知 id 用来给「设备」列表里的会话起名 —— 所以一个会话显示成什么应用，取决于它用的是谁的 api_id。
+
+**那为什么不干脆内置一个？** 因为公开的 api_id 会对所有共用它的人一起限流。Telegram [官方文档](https://core.telegram.org/api/obtaining_api_id)说得很直接：*"It is necessary that you obtain your own API id before you publish your app"*，用公开的那对会 *"result in the API_ID_PUBLISHED_FLOOD error for your users"*。内置在这里，失效就是**关联的**：一个人滥用，所有用户同一刻断线，而我发补丁也救不回来。自己申请意味着配额和信誉都只属于你一个人。
+
+**Bot 模式也需要。** 你熟悉的那个 HTTP Bot API（`api.telegram.org/bot<token>/...`）是 Telegram 替你跑的网关，那是**他们的** MTProto 客户端用**他们的**凭证。Tsumugi 直接说 MTProto —— 这才是它能做到 Bot API 做不到的事的原因 —— 而在 MTProto 里，bot 登录本身就是 `auth.importBotAuthorization(api_id, api_hash, bot_token)`。所以 api_id 要用两次：一次用来建立连接，一次用来登录 bot。
+
+**几个实际细节。** 一个手机号只能绑一个 api_id，所以如果你以前为某个脚本申请过，直接复用。凭证加密存放在本地数据库里，除了 Telegram 不会发往任何地方。
+
+**登录前有一件事该知道：** 按 Telegram 自己的文档，*"all accounts that log in using unofficial Telegram API clients are automatically put under observation"*（所有通过非官方 API 客户端登录的账号都会被自动置于观察），他们给出的理由是防止违反服务条款。这对任何第三方客户端都成立，包括 Tsumugi，且与你用哪个 api_id 无关。
 
 ## 功能
 

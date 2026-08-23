@@ -46,7 +46,9 @@ go build -trimpath -o tsumugi ./cmd/tsumugi
 ## Quick start
 
 1. Create Telegram API credentials at <https://my.telegram.org/apps>. You need
-   the **API ID** and **API hash**.
+   the **API ID** and **API hash** — see
+   [Why Tsumugi asks for an api_id](#why-tsumugi-asks-for-an-api_id) if you are
+   wondering why a client cannot just ship one.
 2. Run `tsumugi`. With no credentials saved, the first-run wizard asks for your
    language, login mode, API ID/hash, and phone number, then hands off to
    Telegram's code and 2FA prompts.
@@ -58,6 +60,55 @@ go build -trimpath -o tsumugi ./cmd/tsumugi
 The full key list is under [Keybindings](#keybindings). Nothing needs to be
 configured up front — the sections below are for proxies, scripted setups, and
 behaviour you may want to change.
+
+## Why Tsumugi asks for an api_id
+
+Because the protocol does, and because borrowing someone else's would eventually
+break every Tsumugi user at once.
+
+**It is an app identity, not an account password.** Every MTProto session begins
+with `initConnection(api_id, device_model, ...)` wrapped around the first call,
+and `api_id` is a required field of it — not an optional one. A client without
+one does not get reduced functionality; it gets `API_ID_INVALID` on the first
+request and nothing else works. Your account is a separate matter: you still log
+in with a phone number, a code and 2FA afterwards.
+
+**Every client has one compiled in.** Telegram for Android publishes its own in
+its source (`BuildVars.java`: `APP_ID = 4`), and Telegram Desktop takes them as
+build flags — `-D TDESKTOP_API_ID=... -D TDESKTOP_API_HASH=...` — while its
+[docs](https://github.com/telegramdesktop/tdesktop/blob/dev/docs/api_credentials.md)
+tell every builder: *"you're required to provide your own api_id and api_hash"*.
+The api_hash is not a secret in the cryptographic sense; it is a label the server
+uses to tell apps apart. Telegram Desktop even recognises specific ids to name
+sessions in your Devices list, which is why a session's app name is whatever its
+api_id belongs to.
+
+**So why not ship one with Tsumugi?** Because a published api_id is
+rate-limited for everyone who shares it. Telegram's own
+[documentation](https://core.telegram.org/api/obtaining_api_id) is explicit:
+*"It is necessary that you obtain your own API id before you publish your app"*,
+and using a published one *"will result in the API_ID_PUBLISHED_FLOOD error for
+your users"*. Bundled here, that failure would be correlated: one abuser and
+every user breaks at the same moment, with no patch I could ship to fix it.
+Registering your own means your quota and your reputation are yours alone.
+
+**Bot mode needs it too.** The HTTP Bot API you may be used to
+(`api.telegram.org/bot<token>/...`) is a gateway Telegram runs on your behalf,
+and it is *their* MTProto client using *their* credentials. Tsumugi speaks
+MTProto directly, which is what lets it do things the Bot API cannot — and there
+the bot login call itself is `auth.importBotAuthorization(api_id, api_hash,
+bot_token)`. So the api_id is required twice over: once to open the connection,
+once to log the bot in.
+
+**Practical notes.** A phone number can only have one api_id, so if you made one
+before for a script, reuse it. Credentials are stored encrypted in the local
+database and are sent nowhere except Telegram.
+
+**One thing to know before logging in:** by Telegram's own documentation,
+*"all accounts that log in using unofficial Telegram API clients are
+automatically put under observation"* — the reason they give is to avoid Terms of
+Service violations. That applies to any third-party client, Tsumugi included,
+whichever api_id you use.
 
 ## Features
 
