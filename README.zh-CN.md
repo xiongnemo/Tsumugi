@@ -17,6 +17,18 @@ scoop install nemo/tsumugi-nightly
 
 跟踪 `dev` 分支的 prerelease —— 目前也只有这一个发布通道。
 
+### Linux 软件包
+
+Linux 构建（`amd64`、`arm64`）同时打成 `.deb`、`.rpm` 和 `.apk`，随每个 release 发布，也可以从 [package.anzupop.com](https://package.anzupop.com) 安装（那里也有 dnf、apk 和 MacPorts 的用法）：
+
+```bash
+sudo curl -fsSLo /usr/share/keyrings/nemo.gpg https://package.anzupop.com/keys/nemo-packages.gpg
+echo "deb [signed-by=/usr/share/keyrings/nemo.gpg] https://package.anzupop.com/apt nightly main" | sudo tee /etc/apt/sources.list.d/nemo.list
+sudo apt update && sudo apt install tsumugi
+```
+
+dev 构建的包版本是其基础版本的预发布（`0.1.64~pre-1`，apk 为 `0.1.64_pre-r1`）；按精确版本号创建的 release 则是该版本本身。每个包在发布前都会在 Debian、Ubuntu、Fedora、Rocky Linux 和 Alpine 上实际安装并运行。
+
 ### 预编译二进制
 
 从 [Releases](https://github.com/xiongnemo/Tsumugi/releases) 下载压缩包，解出单个可执行文件即可。资产命名为 `tsumugi_<版本>_<系统>_<架构>`（Windows 为 `.zip`，其余为 `.tar.gz`），每个 release 都附带 `checksums_<版本>.txt`。发布覆盖 Windows、Linux、macOS、FreeBSD、OpenBSD 的 `amd64` 与 `arm64`。

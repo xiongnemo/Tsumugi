@@ -21,6 +21,24 @@ scoop install nemo/tsumugi-nightly
 
 This tracks `dev` prereleases, which is currently the only release channel.
 
+### Linux packages
+
+The Linux builds (`amd64`, `arm64`) are also packaged as `.deb`, `.rpm` and
+`.apk`, attached to each release and installable from
+[package.anzupop.com](https://package.anzupop.com), which also has dnf, apk and
+MacPorts instructions:
+
+```bash
+sudo curl -fsSLo /usr/share/keyrings/nemo.gpg https://package.anzupop.com/keys/nemo-packages.gpg
+echo "deb [signed-by=/usr/share/keyrings/nemo.gpg] https://package.anzupop.com/apt nightly main" | sudo tee /etc/apt/sources.list.d/nemo.list
+sudo apt update && sudo apt install tsumugi
+```
+
+A dev build is packaged as a prerelease of its base version (`0.1.64~pre-1`, apk
+`0.1.64_pre-r1`); a release created from an exact version is packaged as that
+version. Each package is installed and run on Debian, Ubuntu, Fedora, Rocky
+Linux and Alpine before a release is published.
+
 ### Prebuilt binaries
 
 Download an archive from [Releases](https://github.com/xiongnemo/Tsumugi/releases)

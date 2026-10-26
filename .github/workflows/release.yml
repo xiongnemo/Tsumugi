@@ -4,13 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "First exact semver tag to create, e.g. v0.1.0"
-        required: true
+        description: "Exact semver tag to create, e.g. v0.1.0 (leave empty with rehearse)"
+        required: false
         type: string
       prerelease:
         description: "Mark the GitHub release as a prerelease"
         required: true
         default: true
+        type: boolean
+      rehearse:
+        description: "Build, package and smoke-test this commit as a dev build; publish nothing"
+        required: false
+        default: false
         type: boolean
   push:
     branches:
@@ -44,7 +49,8 @@ jobs:
           COMMIT="$(git rev-parse HEAD)"
           COMMIT12="${COMMIT:0:12}"
 
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+          REHEARSE="${{ inputs.rehearse || false }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${REHEARSE}" != "true" ]]; then
             BASE_TAG="${{ inputs.version }}"
             TAG="${BASE_TAG}"
             if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -93,7 +99,7 @@ jobs:
           fi
           if [[ "${SHOULD_RELEASE}" == "true" ]]; then
             RELEASE_VERSION="${BASE_TAG}-${SAFE_BRANCH}-${COMMIT12}"
-            if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]]; then
+            if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" || "${REHEARSE}" == "true" ]]; then
               TAG="${RELEASE_VERSION}"
               if git rev-parse "${TAG}" >/dev/null 2>&1; then
                 echo "Tag ${TAG} already exists; skipping automated prerelease."
@@ -104,7 +110,29 @@ jobs:
             RELEASE_VERSION=""
           fi
 
+          # A release created from an exact version is packaged as that version;
+          # every other build is a prerelease of the next one, 0.1.64~pre-1 (apk
+          # 0.1.64_pre-r1), which apk-tools accepts where nFPM's default
+          # 0.1.64_dev-<commit> spelling is invalid. A rehearsal builds, packages
+          # and smoke-tests exactly what a push would, and publishes nothing.
+          if [[ "${TAG}" == "${BASE_TAG}" && -n "${TAG}" ]]; then
+            PACKAGE_VERSION="${BASE_TAG#v}"
+          else
+            PACKAGE_VERSION="${BASE_TAG#v}-pre"
+          fi
+          PUBLISH="true"
+          if [[ "${REHEARSE}" == "true" ]]; then
+            PUBLISH="false"
+          fi
+          CHANNEL="nightly"
+          if [[ "${PRERELEASE}" != "true" ]]; then
+            CHANNEL="stable"
+          fi
+
           {
+            echo "publish=${PUBLISH}"
+            echo "package_version=${PACKAGE_VERSION}"
+            echo "channel=${CHANNEL}"
             echo "should_release=${SHOULD_RELEASE}"
             echo "create_tag=${CREATE_TAG}"
             echo "tag=${TAG}"
@@ -188,8 +216,71 @@ jobs:
             exit 1
           fi
 
+      # The Linux builds packaged for apt, dnf and apk -- and for
+      # https://package.anzupop.com, which indexes these assets where they are
+      # published. Every package is installed and run on its distribution before
+      # anything is tagged or released.
+      - name: Package for Linux
+        if: steps.meta.outputs.should_release == 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
+          PACKAGE_VERSION: ${{ steps.meta.outputs.package_version }}
+          NFPM_RELEASE: v2.48.0
+        run: |
+          set -euo pipefail
+          go install "github.com/goreleaser/nfpm/v2/cmd/nfpm@${NFPM_RELEASE}"
+          for arch in amd64 arm64; do
+            name="tsumugi_${RELEASE_VERSION}_linux_${arch}"
+            sed -e "s|@NFPM_ARCH@|${arch}|g" \
+                -e "s|@NFPM_VERSION@|${PACKAGE_VERSION}|g" \
+                -e "s|@NFPM_BINARY@|${PWD}/dist/${name}/tsumugi|g" \
+                -e "s|@TSUMUGI_VERSION@|${RELEASE_VERSION}|g" \
+                packaging/nfpm.yaml > "dist/nfpm-${arch}.yaml"
+            for format in deb rpm apk; do
+              nfpm package --config "dist/nfpm-${arch}.yaml" --packager "${format}" --target "out/${name}.${format}"
+            done
+          done
+          dpkg-deb -f "out/tsumugi_${RELEASE_VERSION}_linux_amd64.deb" Package Version Architecture
+          (cd out && rm -f checksums_*.txt && sha256sum * > "checksums_${RELEASE_VERSION}.txt")
+
+      - name: Set up QEMU
+        if: steps.meta.outputs.should_release == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Smoke-install the packages
+        if: steps.meta.outputs.should_release == 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          run() {
+            local platform=$1 image=$2 format=$3 arch=$4
+            echo "== ${format} on ${image} (${platform})"
+            docker run --rm --platform "${platform}" -e FORMAT="${format}" -e WANT="${RELEASE_VERSION}" \
+              -v "${PWD}/out/tsumugi_${RELEASE_VERSION}_linux_${arch}.${format}:/pkg.${format}:ro" "${image}" sh -euc '
+                case "$FORMAT" in
+                  deb) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /pkg.deb ;;
+                  rpm) dnf install -y -q /pkg.rpm ;;
+                  apk) apk add --no-cache --allow-untrusted /pkg.apk ;;
+                esac
+                got=$(tsumugi --version)
+                echo "tsumugi --version: $got"
+                [ "$got" = "$WANT" ]
+              '
+          }
+          run linux/amd64 debian:stable deb amd64
+          run linux/amd64 ubuntu:24.04 deb amd64
+          run linux/amd64 fedora:latest rpm amd64
+          run linux/amd64 rockylinux:9 rpm amd64
+          run linux/amd64 alpine:3.21 apk amd64
+          run linux/amd64 alpine:3.24 apk amd64
+          run linux/arm64 debian:stable deb arm64
+          run linux/arm64 alpine:3.24 apk arm64
+
       - name: Create tag
-        if: steps.meta.outputs.should_release == 'true' && steps.meta.outputs.create_tag == 'true'
+        if: steps.meta.outputs.should_release == 'true' && steps.meta.outputs.create_tag == 'true' && steps.meta.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -205,7 +296,7 @@ jobs:
           if-no-files-found: error
 
       - name: Create GitHub release
-        if: steps.meta.outputs.should_release == 'true'
+        if: steps.meta.outputs.should_release == 'true' && steps.meta.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -219,3 +310,29 @@ jobs:
             --title "Tsumugi ${{ steps.meta.outputs.tag }}" \
             --notes "Automated release for ${{ steps.meta.outputs.release_version }}." \
             "${args[@]}"
+
+      # The package repository fetches this release by tag and hashes the assets
+      # itself, so all this sends is which release to look at; it also passes the
+      # release on to the Scoop bucket. Without the token the release still ships
+      # and the repository's own sweep picks it up later.
+      - name: Tell the package repository
+        if: steps.meta.outputs.should_release == 'true' && steps.meta.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGES_DISPATCH_TOKEN }}
+          PACKAGES_REPO: ${{ vars.PACKAGES_REPO || 'xiongnemo/packages' }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "PACKAGES_DISPATCH_TOKEN is not set; ${PACKAGES_REPO} will pick this up on its own schedule."
+            exit 0
+          fi
+          gh api "repos/${PACKAGES_REPO}/dispatches" \
+            -f event_type=release-published \
+            -f "client_payload[repository]=${GITHUB_REPOSITORY}" \
+            -f "client_payload[tag]=${TAG}" \
+            -f "client_payload[channel]=${CHANNEL}" \
+            -f "client_payload[sha]=${GITHUB_SHA}" \
+            || echo "::warning title=Package repository not notified::dispatch to ${PACKAGES_REPO} failed; its scheduled sweep is the backstop."

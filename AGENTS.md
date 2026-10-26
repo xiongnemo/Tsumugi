@@ -136,6 +136,14 @@ In CI, use `actions/setup-go` with `go-version-file: go.mod`, run
 `go test ./...` before release builds, and use `fetch-depth: 0` whenever
 versioning depends on git tags or commit counts.
 
+The Linux builds are also packaged as `.deb`, `.rpm` and `.apk` from
+`packaging/nfpm.yaml` and smoke-installed before anything is tagged; the release
+job then notifies `xiongnemo/packages`, which indexes them at
+https://package.anzupop.com. Dev builds are packaged as `X.Y.Z~pre` (apk
+`X.Y.Z_pre`) because apk-tools rejects nFPM's default `X.Y.Z_dev-<commit>`.
+Run the Release workflow by hand with `rehearse` to exercise all of it without
+publishing.
+
 Keep cross-build matrices opt-in. Do not blindly build every target from
 `go tool dist list`; new Go releases may add targets that the repository has
 not validated.
