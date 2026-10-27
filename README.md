@@ -19,7 +19,8 @@ scoop bucket add nemo https://github.com/xiongnemo/windows-binaries-scoop-bucket
 scoop install nemo/tsumugi-nightly
 ```
 
-This tracks `dev` prereleases, which is currently the only release channel.
+`tsumugi-nightly` tracks `dev` prereleases. Releases are published by pushing an
+exact `vX.Y.Z` tag, and report that bare version.
 
 ### Linux packages
 
@@ -35,8 +36,8 @@ sudo apt update && sudo apt install tsumugi
 ```
 
 A dev build is packaged as a prerelease of its base version (`0.1.64~pre-1`, apk
-`0.1.64_pre-r1`); a release created from an exact version is packaged as that
-version. Each package is installed and run on Debian, Ubuntu, Fedora, Rocky
+`0.1.64_pre-r1`); a release, published by pushing an exact `vX.Y.Z` tag, is
+packaged as that version. Each package is installed and run on Debian, Ubuntu, Fedora, Rocky
 Linux and Alpine before a release is published.
 
 ### Prebuilt binaries

@@ -141,8 +141,8 @@ The Linux builds are also packaged as `.deb`, `.rpm` and `.apk` from
 job then notifies `xiongnemo/packages`, which indexes them at
 https://package.anzupop.com. Dev builds are packaged as `X.Y.Z~pre` (apk
 `X.Y.Z_pre`) because apk-tools rejects nFPM's default `X.Y.Z_dev-<commit>`.
-Run the Release workflow by hand with `rehearse` to exercise all of it without
-publishing.
+Run the Release workflow by hand with `rehearse_release` to exercise the
+release path without publishing; a manual run never publishes.
 
 Keep cross-build matrices opt-in. Do not blindly build every target from
 `go tool dist list`; new Go releases may add targets that the repository has
@@ -177,8 +177,11 @@ managers such as Scoop. Dev prerelease tags like `v0.0.2-dev-abcdef123456`
 must not be used as the base for future patch calculations.
 
 To bump major/minor or reset the patch base, create and push a new exact semver
-tag on the desired base commit, for example `v0.2.0`. That tagged commit builds
-as `v0.2.0-...`; the next commit builds as `v0.2.1-...`.
+tag on the desired base commit, for example `v0.2.0`. Pushing that tag builds and
+publishes the release: a tag build renders bare (`v0.2.0`, packages `0.2.0-1`),
+and CI refuses a tag that is not the version its commit computes. Pushes of the
+same commit to a branch still build as `v0.2.0-...`; the next commit builds as
+`v0.2.1-...`.
 
 Sanitize branch names before placing them in version strings or artifact names.
 Use a 12-character commit hash and append `-dirty` when uncommitted changes are

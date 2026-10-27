@@ -15,7 +15,7 @@ scoop bucket add nemo https://github.com/xiongnemo/windows-binaries-scoop-bucket
 scoop install nemo/tsumugi-nightly
 ```
 
-跟踪 `dev` 分支的 prerelease —— 目前也只有这一个发布通道。
+`tsumugi-nightly` 跟踪 `dev` 分支的 prerelease。正式版通过推送精确的 `vX.Y.Z` tag 发布，`--version` 输出的就是这个干净的版本号。
 
 ### Linux 软件包
 
@@ -27,7 +27,7 @@ echo "deb [signed-by=/usr/share/keyrings/nemo.gpg] https://package.anzupop.com/a
 sudo apt update && sudo apt install tsumugi
 ```
 
-dev 构建的包版本是其基础版本的预发布（`0.1.64~pre-1`，apk 为 `0.1.64_pre-r1`）；按精确版本号创建的 release 则是该版本本身。每个包在发布前都会在 Debian、Ubuntu、Fedora、Rocky Linux 和 Alpine 上实际安装并运行。
+dev 构建的包版本是其基础版本的预发布（`0.1.64~pre-1`，apk 为 `0.1.64_pre-r1`）；推送精确 `vX.Y.Z` tag 发布的正式版则是该版本本身。每个包在发布前都会在 Debian、Ubuntu、Fedora、Rocky Linux 和 Alpine 上实际安装并运行。
 
 ### 预编译二进制
 
