@@ -1,19 +1,15 @@
 name: Release
 
+# A push to dev/master/main publishes a dev prerelease once an exact semver tag
+# exists; pushing an exact vMAJOR.MINOR.PATCH tag publishes that version as a
+# release. A manual run never publishes: with `rehearse_release` it builds,
+# packages and smoke-tests the current commit as a release, so the release path
+# can be checked before the tag exists.
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Exact semver tag to create, e.g. v0.1.0 (leave empty with rehearse)"
-        required: false
-        type: string
-      prerelease:
-        description: "Mark the GitHub release as a prerelease"
-        required: true
-        default: true
-        type: boolean
-      rehearse:
-        description: "Build, package and smoke-test this commit as a dev build; publish nothing"
+      rehearse_release:
+        description: "Build this commit as a release (nothing is published)"
         required: false
         default: false
         type: boolean
@@ -22,6 +18,8 @@ on:
       - dev
       - master
       - main
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: write
@@ -41,55 +39,53 @@ jobs:
       - name: Resolve release metadata
         id: meta
         shell: bash
+        env:
+          REHEARSE_RELEASE: ${{ inputs.rehearse_release || false }}
         run: |
           set -euo pipefail
 
           SHOULD_RELEASE="true"
-          CREATE_TAG="true"
+          CREATE_TAG="false"
+          PUBLISH="false"
+          RELEASE="false"
           COMMIT="$(git rev-parse HEAD)"
           COMMIT12="${COMMIT:0:12}"
+          BRANCH="${GITHUB_REF_NAME:-release}"
 
-          REHEARSE="${{ inputs.rehearse || false }}"
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${REHEARSE}" != "true" ]]; then
-            BASE_TAG="${{ inputs.version }}"
-            TAG="${BASE_TAG}"
-            if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "version must be an exact semver tag like v0.1.0" >&2
-              exit 1
-            fi
-            if git rev-parse "${TAG}" >/dev/null 2>&1; then
-              echo "tag ${TAG} already exists" >&2
-              exit 1
-            fi
-            BRANCH="${GITHUB_REF_NAME}"
-            PRERELEASE="${{ inputs.prerelease }}"
+          # patch = the nearest exact tag's patch plus the commits since it.
+          BASE_EXACT_TAG="$(git tag --merged HEAD --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+          if [[ -z "${BASE_EXACT_TAG}" ]]; then
+            echo "No exact semver base tag found; nothing to release."
+            SHOULD_RELEASE="false"
+            BASE_TAG="v0.0.1"
+            COMMITS_SINCE=0
           else
-            BRANCH="${GITHUB_REF_NAME}"
-            if [[ -z "${BRANCH}" ]]; then
-              BRANCH="release"
-            fi
-            PRERELEASE="true"
+            COMMITS_SINCE="$(git rev-list "${BASE_EXACT_TAG}..HEAD" --count)"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "${BASE_EXACT_TAG#v}"
+            BASE_TAG="v${MAJOR}.${MINOR}.$((PATCH + COMMITS_SINCE))"
+          fi
 
-            EXACT_TAGS="$(git tag --merged HEAD --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)"
-            BASE_EXACT_TAG="$(echo "${EXACT_TAGS}" | head -n 1)"
-            if [[ -z "${BASE_EXACT_TAG}" ]]; then
-              echo "No exact semver base tag found; skipping automated prerelease."
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            # A tag build is the release, and renders bare -- but only if the tag
+            # is the version this commit computes anyway; otherwise one build
+            # would carry two versions.
+            if [[ "${GITHUB_REF_NAME}" != "${BASE_TAG}" ]]; then
+              echo "tag ${GITHUB_REF_NAME} is not the version this commit computes, ${BASE_TAG}" >&2
+              exit 1
+            fi
+            RELEASE="true"
+            PUBLISH="true"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            if [[ "${REHEARSE_RELEASE}" == "true" ]]; then
+              RELEASE="true"
+            fi
+          elif [[ "${SHOULD_RELEASE}" == "true" ]]; then
+            if [[ "${COMMITS_SINCE}" == "0" ]]; then
+              echo "HEAD is the exact base tag; its own tag build is the release."
               SHOULD_RELEASE="false"
-              BASE_TAG="v0.0.1"
-              TAG=""
             else
-              COMMITS_SINCE="$(git rev-list "${BASE_EXACT_TAG}..HEAD" --count)"
-              if [[ "${COMMITS_SINCE}" == "0" ]]; then
-                echo "HEAD is the exact base tag; skipping automated prerelease."
-                SHOULD_RELEASE="false"
-                BASE_TAG="${BASE_EXACT_TAG}"
-                TAG=""
-              else
-                BASE="${BASE_EXACT_TAG#v}"
-                IFS='.' read -r MAJOR MINOR PATCH <<< "${BASE}"
-                NEXT_PATCH=$((PATCH + COMMITS_SINCE))
-                BASE_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
-              fi
+              PUBLISH="true"
+              CREATE_TAG="true"
             fi
           fi
 
@@ -97,40 +93,33 @@ jobs:
           if [[ -z "${SAFE_BRANCH}" ]]; then
             SAFE_BRANCH="release"
           fi
-          if [[ "${SHOULD_RELEASE}" == "true" ]]; then
-            RELEASE_VERSION="${BASE_TAG}-${SAFE_BRANCH}-${COMMIT12}"
-            if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" || "${REHEARSE}" == "true" ]]; then
-              TAG="${RELEASE_VERSION}"
-              if git rev-parse "${TAG}" >/dev/null 2>&1; then
-                echo "Tag ${TAG} already exists; skipping automated prerelease."
-                SHOULD_RELEASE="false"
-              fi
-            fi
+          if [[ "${RELEASE}" == "true" ]]; then
+            RELEASE_VERSION="${BASE_TAG}"
           else
-            RELEASE_VERSION=""
+            RELEASE_VERSION="${BASE_TAG}-${SAFE_BRANCH}-${COMMIT12}"
+          fi
+          TAG="${RELEASE_VERSION}"
+          if [[ "${CREATE_TAG}" == "true" ]] && git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists; skipping automated prerelease."
+            SHOULD_RELEASE="false"
           fi
 
-          # A release created from an exact version is packaged as that version;
-          # every other build is a prerelease of the next one, 0.1.64~pre-1 (apk
-          # 0.1.64_pre-r1), which apk-tools accepts where nFPM's default
-          # 0.1.64_dev-<commit> spelling is invalid. A rehearsal builds, packages
-          # and smoke-tests exactly what a push would, and publishes nothing.
-          if [[ "${TAG}" == "${BASE_TAG}" && -n "${TAG}" ]]; then
+          # A release is packaged as its version; every other build is a
+          # prerelease of it, 0.1.64~pre-1 (apk 0.1.64_pre-r1), which apk-tools
+          # accepts where nFPM's default 0.1.64_dev-<commit> spelling is invalid.
+          if [[ "${RELEASE}" == "true" ]]; then
             PACKAGE_VERSION="${BASE_TAG#v}"
+            PRERELEASE="false"
+            CHANNEL="stable"
           else
             PACKAGE_VERSION="${BASE_TAG#v}-pre"
-          fi
-          PUBLISH="true"
-          if [[ "${REHEARSE}" == "true" ]]; then
-            PUBLISH="false"
-          fi
-          CHANNEL="nightly"
-          if [[ "${PRERELEASE}" != "true" ]]; then
-            CHANNEL="stable"
+            PRERELEASE="true"
+            CHANNEL="nightly"
           fi
 
           {
             echo "publish=${PUBLISH}"
+            echo "release=${RELEASE}"
             echo "package_version=${PACKAGE_VERSION}"
             echo "channel=${CHANNEL}"
             echo "should_release=${SHOULD_RELEASE}"
@@ -143,6 +132,7 @@ jobs:
             echo "release_version=${RELEASE_VERSION}"
             echo "prerelease=${PRERELEASE}"
           } >> "${GITHUB_OUTPUT}"
+          echo "${RELEASE_VERSION} (release=${RELEASE}, publish=${PUBLISH})"
 
       - name: Run tests
         if: steps.meta.outputs.should_release == 'true'
@@ -156,14 +146,19 @@ jobs:
           RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
           COMMIT: ${{ steps.meta.outputs.commit }}
           BRANCH: ${{ steps.meta.outputs.branch }}
+          RELEASE: ${{ steps.meta.outputs.release }}
         run: |
           set -euo pipefail
           mkdir -p dist out
 
+          # internal/version renders a version with no commit or branch bare, which
+          # is what a release is: v0.2.0, as its tag and packages say.
           LDFLAGS="-s -w"
           LDFLAGS="${LDFLAGS} -X github.com/nemo/Tsumugi/internal/version.version=${BASE_TAG}"
-          LDFLAGS="${LDFLAGS} -X github.com/nemo/Tsumugi/internal/version.commit=${COMMIT}"
-          LDFLAGS="${LDFLAGS} -X github.com/nemo/Tsumugi/internal/version.branch=${BRANCH}"
+          if [[ "${RELEASE}" != "true" ]]; then
+            LDFLAGS="${LDFLAGS} -X github.com/nemo/Tsumugi/internal/version.commit=${COMMIT}"
+            LDFLAGS="${LDFLAGS} -X github.com/nemo/Tsumugi/internal/version.branch=${BRANCH}"
+          fi
           LDFLAGS="${LDFLAGS} -X github.com/nemo/Tsumugi/internal/version.dirty=false"
 
           targets=(
@@ -304,7 +299,9 @@ jobs:
           set -euo pipefail
           args=()
           if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
-            args+=(--prerelease)
+            args+=(--prerelease --latest=false)
+          else
+            args+=(--latest)
           fi
           gh release create "${{ steps.meta.outputs.tag }}" out/* \
             --title "Tsumugi ${{ steps.meta.outputs.tag }}" \
