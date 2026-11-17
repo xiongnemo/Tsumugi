@@ -28,8 +28,8 @@ var (
 	configured string
 )
 
-// SetPath sets where the log goes when TSUMUGI_DEBUG_LOG does not say: the state directory, or an
-// old log still in the working directory. Its directory is created on the first write.
+// SetPath sets where the log goes when TSUMUGI_DEBUG_LOG does not say: the state directory, or the
+// --config-dir root's. Its directory is created on the first write.
 func SetPath(path string) {
 	mu.Lock()
 	defer mu.Unlock()

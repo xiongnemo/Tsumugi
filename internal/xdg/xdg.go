@@ -154,7 +154,9 @@ type Item struct {
 }
 
 // Items lists everything Tsumugi stores. cwd is the directory the debug logs used to default to
-// (the working directory); "" gives them no legacy location.
+// (the working directory); "" gives them no legacy location. Only migrate passes one: at runtime
+// new debug logs always go to the state directory, never to an old log found in the working
+// directory.
 //
 // The media cache keeps its media/ subdirectory under the cache root. On Linux that root was
 // already ~/.cache/tsumugi, so the media cache is the one thing that does not move there.

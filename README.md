@@ -413,14 +413,18 @@ on macOS, `~/.cache/tsumugi` on Linux), created an empty `%APPDATA%\tsumugi` or
 `~/Library/Application Support/tsumugi`, and wrote the debug logs to the working
 directory.
 
-Those keep working. Each item is looked up on its own: at the new location first,
-then at the old one, and if it is in neither, the new location is used. When
-something is found only at the old location, Tsumugi uses it and says so on stderr
-before the TUI starts:
+The database, sessions and media cache keep working from there. Each is looked up
+on its own: at the new location first, then at the old one, and if it is in
+neither, the new location is used. When something is found only at the old
+location, Tsumugi uses it and says so on stderr before the TUI starts:
 
 ```text
 tsumugi: using the database from the old location C:\Users\you\AppData\Local\tsumugi\tsumugi.db; run "tsumugi migrate" to move it to C:\Users\you\.local\share\tsumugi\tsumugi.db
 ```
+
+Debug logs are the exception: new ones always go to the state directory, whatever
+directory Tsumugi was started from, and an old log in the working directory is left
+for `tsumugi migrate` to move.
 
 `tsumugi migrate` moves everything:
 

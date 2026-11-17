@@ -109,7 +109,7 @@ func Load(flags CLIFlags) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	paths = pathsInUse(paths, os.Getenv)
+	paths = withDebugLogOverride(paths, os.Getenv)
 	envAPIID, err := envInt("TSUMUGI_API_ID", "API_ID")
 	if err != nil {
 		return Config{}, err
@@ -261,10 +261,7 @@ func defaultPaths(configPath string) (Paths, error) {
 	if err != nil {
 		return Paths{}, err
 	}
-	// The working directory is only where older releases wrote the debug logs by default; failing
-	// to read it just means not looking there.
-	cwd, _ := os.Getwd()
-	return resolvePaths(env, cwd), nil
+	return resolvePaths(env), nil
 }
 
 // overridePaths is the --config-dir layout, unchanged from before the XDG move apart from the state
@@ -286,10 +283,14 @@ func overridePaths(configPath string) Paths {
 
 // resolvePaths places each item on its own: an old database does not drag the sessions or the media
 // cache back to the old location with it, nor the other way round.
-func resolvePaths(env xdg.Env, cwd string) Paths {
+//
+// The debug logs have no fallback. Older releases wrote them to the working directory, but a run
+// must not append to whatever log happens to sit in the directory it was started from: new logs
+// always go to the state directory, and `tsumugi migrate` moves old ones there.
+func resolvePaths(env xdg.Env) Paths {
 	layout := env.Layout()
 	p := Paths{ConfigDir: layout.Config, StateDir: layout.State, CacheDir: layout.Cache}
-	for _, item := range env.Items(cwd) {
+	for _, item := range env.Items("") {
 		r := item.Resolve()
 		switch item.ID {
 		case xdg.Database:
@@ -310,38 +311,13 @@ func resolvePaths(env xdg.Env, cwd string) Paths {
 	return p
 }
 
-// pathsInUse applies TSUMUGI_DEBUG_LOG, which still wins for the debug log, and keeps a legacy
-// notice only for what this run will touch: an old debug log is nobody's business while debug
-// logging is off.
-func pathsInUse(p Paths, getenv func(string) string) Paths {
-	debugOn := isTrue(getenv("TSUMUGI_DEBUG"))
-	debugOverride := strings.TrimSpace(getenv("TSUMUGI_DEBUG_LOG"))
-	if debugOverride != "" {
-		p.DebugLog = debugOverride
+// withDebugLogOverride applies TSUMUGI_DEBUG_LOG, which still wins for the debug log over both the
+// state directory and --config-dir.
+func withDebugLogOverride(p Paths, getenv func(string) string) Paths {
+	if override := strings.TrimSpace(getenv("TSUMUGI_DEBUG_LOG")); override != "" {
+		p.DebugLog = override
 	}
-	memOn := getenv("TSUMUGI_DEBUG_MEM") == "1"
-	var kept []LegacyItem
-	for _, item := range p.Legacy {
-		switch item.ID {
-		case xdg.DebugLog:
-			if !debugOn || debugOverride != "" {
-				continue
-			}
-		case xdg.MemoryLog:
-			if !memOn {
-				continue
-			}
-		}
-		kept = append(kept, item)
-	}
-	p.Legacy = kept
 	return p
-}
-
-// isTrue matches debuglog.Enabled's reading of TSUMUGI_DEBUG.
-func isTrue(value string) bool {
-	v := strings.TrimSpace(value)
-	return v == "1" || strings.EqualFold(v, "true")
 }
 
 func firstString(values ...string) string {

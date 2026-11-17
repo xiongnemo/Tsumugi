@@ -127,7 +127,6 @@ func TestEnsureDirsCreatesOnlyWhatStartupWrites(t *testing.T) {
 // in the working directory is not mentioned while debug logging is off.
 func TestResolvePathsPerItemWithNotices(t *testing.T) {
 	home := t.TempDir()
-	cwd := t.TempDir()
 	env := xdg.Env{GOOS: "windows", Home: home, Getenv: mapEnv(map[string]string{
 		"LOCALAPPDATA": filepath.Join(home, "AppData", "Local"),
 		"APPDATA":      filepath.Join(home, "AppData", "Roaming"),
@@ -135,9 +134,8 @@ func TestResolvePathsPerItemWithNotices(t *testing.T) {
 	legacyRoot := filepath.Join(home, "AppData", "Local", "tsumugi")
 	writeFile(t, filepath.Join(legacyRoot, "tsumugi.db"))
 	writeFile(t, filepath.Join(home, ".local", "share", "tsumugi", "sessions", "user.json"))
-	writeFile(t, filepath.Join(cwd, "debug-tsumugi.log"))
 
-	p := resolvePaths(env, cwd)
+	p := resolvePaths(env)
 	if p.DataDir != legacyRoot {
 		t.Errorf("DataDir = %q, want the legacy %q", p.DataDir, legacyRoot)
 	}
@@ -147,24 +145,11 @@ func TestResolvePathsPerItemWithNotices(t *testing.T) {
 	if want := filepath.Join(home, ".cache", "tsumugi", "media"); p.MediaDir != want {
 		t.Errorf("MediaDir = %q, want %q", p.MediaDir, want)
 	}
-	if want := filepath.Join(cwd, "debug-tsumugi.log"); p.DebugLog != want {
-		t.Errorf("DebugLog = %q, want the legacy %q", p.DebugLog, want)
+	if ids := legacyIDs(p.Legacy); strings.Join(ids, ",") != xdg.Database {
+		t.Errorf("legacy notices = %v, want only the database", ids)
 	}
 
-	quiet := pathsInUse(p, mapEnv(nil))
-	if ids := legacyIDs(quiet.Legacy); strings.Join(ids, ",") != xdg.Database {
-		t.Errorf("legacy notices with debug off = %v, want only the database", ids)
-	}
-	debug := pathsInUse(p, mapEnv(map[string]string{"TSUMUGI_DEBUG": "1"}))
-	if ids := legacyIDs(debug.Legacy); strings.Join(ids, ",") != xdg.Database+","+xdg.DebugLog {
-		t.Errorf("legacy notices with debug on = %v", ids)
-	}
-	override := pathsInUse(p, mapEnv(map[string]string{"TSUMUGI_DEBUG": "1", "TSUMUGI_DEBUG_LOG": filepath.Join(cwd, "x.log")}))
-	if override.DebugLog != filepath.Join(cwd, "x.log") || len(override.Legacy) != 1 {
-		t.Errorf("TSUMUGI_DEBUG_LOG did not win: %+v", override)
-	}
-
-	notice := quiet.Legacy[0].Notice()
+	notice := p.Legacy[0].Notice()
 	for _, want := range []string{"tsumugi:", filepath.Join(legacyRoot, "tsumugi.db"), `"tsumugi migrate"`, filepath.Join(home, ".local", "share", "tsumugi", "tsumugi.db")} {
 		if !strings.Contains(notice, want) {
 			t.Errorf("notice %q is missing %q", notice, want)
@@ -172,6 +157,45 @@ func TestResolvePathsPerItemWithNotices(t *testing.T) {
 	}
 	if strings.Contains(notice, "\n") {
 		t.Errorf("notice must be one line: %q", notice)
+	}
+}
+
+// Old debug logs in the working directory are migrate's business only: a run started there still
+// writes new logs to the state directory, and says nothing about the old ones.
+func TestDebugLogsNeverFallBackToTheWorkingDirectory(t *testing.T) {
+	home := isolateHome(t)
+	cwd := t.TempDir()
+	writeFile(t, filepath.Join(cwd, xdg.DebugLogFile))
+	writeFile(t, filepath.Join(cwd, xdg.MemoryLogFile))
+	t.Chdir(cwd)
+	t.Setenv("TSUMUGI_DEBUG", "1")
+	t.Setenv("TSUMUGI_DEBUG_MEM", "1")
+
+	cfg, err := Load(CLIFlags{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(home, ".local", "state", "tsumugi")
+	if cfg.Paths.DebugLog != filepath.Join(state, xdg.DebugLogFile) {
+		t.Errorf("DebugLog = %q, want it in %s", cfg.Paths.DebugLog, state)
+	}
+	if cfg.Paths.MemoryLog != filepath.Join(state, xdg.MemoryLogFile) {
+		t.Errorf("MemoryLog = %q, want it in %s", cfg.Paths.MemoryLog, state)
+	}
+	if len(cfg.Paths.Legacy) != 0 {
+		t.Errorf("old logs produced notices: %+v", cfg.Paths.Legacy)
+	}
+
+	override := filepath.Join(t.TempDir(), "x.log")
+	t.Setenv("TSUMUGI_DEBUG_LOG", override)
+	for _, flags := range []CLIFlags{{}, {ConfigPath: t.TempDir()}} {
+		cfg, err := Load(flags)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Paths.DebugLog != override {
+			t.Errorf("with %+v, DebugLog = %q, want the TSUMUGI_DEBUG_LOG %q", flags, cfg.Paths.DebugLog, override)
+		}
 	}
 }
 

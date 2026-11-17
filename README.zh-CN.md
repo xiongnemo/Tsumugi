@@ -207,11 +207,13 @@ Tsumugi 的文件都放在用户主目录下，采用 [XDG Base Directory](https
 
 旧版本把数据库、会话与媒体缓存放在系统缓存目录（Windows 为 `%LOCALAPPDATA%\tsumugi`，macOS 为 `~/Library/Caches/tsumugi`，Linux 为 `~/.cache/tsumugi`），另外会创建一个空的 `%APPDATA%\tsumugi` 或 `~/Library/Application Support/tsumugi`，诊断日志则写在工作目录。
 
-这些位置仍然可用。每一项单独查找：先找新位置，再找旧位置，都没有则使用新位置。若某项只在旧位置存在，Tsumugi 会继续使用它，并在 TUI 启动前向 stderr 打印一行：
+数据库、会话与媒体缓存在旧位置仍然可用。每一项单独查找：先找新位置，再找旧位置，都没有则使用新位置。若某项只在旧位置存在，Tsumugi 会继续使用它，并在 TUI 启动前向 stderr 打印一行：
 
 ```text
 tsumugi: using the database from the old location C:\Users\you\AppData\Local\tsumugi\tsumugi.db; run "tsumugi migrate" to move it to C:\Users\you\.local\share\tsumugi\tsumugi.db
 ```
+
+诊断日志例外：无论从哪个目录启动，新日志都写到 state 目录；工作目录里的旧日志留给 `tsumugi migrate` 搬迁。
 
 `tsumugi migrate` 负责搬迁：
 
