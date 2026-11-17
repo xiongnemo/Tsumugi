@@ -43,16 +43,16 @@ type Options struct {
 // Run migrates and returns the process exit code: 0 when everything moved or there was nothing to
 // do, 1 on a conflict, an error, or a running tsumugi, and 2 for a bad --from.
 func Run(ctx context.Context, opts Options) int {
+	return newMigrator(opts, opts.DryRun).run(ctx)
+}
+
+func newMigrator(opts Options, dry bool) *migrator {
 	if opts.Out == nil {
 		opts.Out = io.Discard
 	}
 	if opts.Err == nil {
 		opts.Err = io.Discard
 	}
-	return newMigrator(opts, opts.DryRun).run(ctx)
-}
-
-func newMigrator(opts Options, dry bool) *migrator {
 	return &migrator{
 		opts:     opts,
 		dry:      dry,
@@ -362,21 +362,55 @@ func (m *migrator) moveDatabase(it xdg.Item, src string) {
 			return
 		}
 	}
-	m.act("move", "%s: %s -> %s", it.What, src, dst)
+	// The database and its journals move as one: the probe's checkpoint normally leaves no WAL by
+	// now, but a database separated from a journal it still needs has lost those transactions.
+	group := []string{src}
+	for _, s := range []string{"-wal", "-journal"} {
+		if exists(src + s) {
+			group = append(group, src+s)
+		}
+	}
+	for _, p := range group {
+		m.act("move", "%s: %s -> %s", it.What, p, dst+strings.TrimPrefix(p, src))
+	}
 	if !m.dry {
-		if err := moveFile(src, dst); err != nil {
+		if err := moveTogether(src, dst, group); err != nil {
 			m.fail("%s: %v", it.What, err)
 			return
 		}
 	}
-	m.gone[src] = true
-	m.dbTarget = dst
-	for _, s := range []string{"-wal", "-journal"} {
-		if exists(src + s) {
-			m.moveFileItem(it, src+s, dst+s)
-		}
+	for _, p := range group {
+		m.gone[p] = true
 	}
+	m.dbTarget = dst
 	m.removeIndex(it, src)
+}
+
+// moveTogether moves files that share the prefix src to the same names under dst, all or none: when
+// one fails, those already moved go back. If even that fails, the error says where each file is and
+// what to move back by hand.
+func moveTogether(src, dst string, group []string) error {
+	var moved []string
+	for _, p := range group {
+		target := dst + strings.TrimPrefix(p, src)
+		err := moveFile(p, target)
+		if err == nil {
+			moved = append(moved, p)
+			continue
+		}
+		var stuck []string
+		for i := len(moved) - 1; i >= 0; i-- {
+			back := dst + strings.TrimPrefix(moved[i], src)
+			if berr := moveFile(back, moved[i]); berr != nil {
+				stuck = append(stuck, fmt.Sprintf("%s (%v)", back, berr))
+			}
+		}
+		if len(stuck) > 0 {
+			return fmt.Errorf("moving %s failed (%v), and moving back to %s failed too for %s: move those files back next to %s by hand before starting tsumugi", p, err, filepath.Dir(src), strings.Join(stuck, ", "), src)
+		}
+		return fmt.Errorf("moving %s failed (%v); everything was moved back, so the database is still at %s", p, err, src)
+	}
+	return nil
 }
 
 func (m *migrator) removeIndex(it xdg.Item, db string) {

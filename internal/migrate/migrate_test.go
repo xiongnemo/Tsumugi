@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -498,6 +499,74 @@ func TestStrayWALAtTheDestinationBlocksTheDatabase(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(f.layout.Data, "tsumugi.db")); err == nil {
 		t.Error("database was moved next to a stray WAL")
 	}
+}
+
+// A database must never end up apart from its journals. This calls moveDatabase directly: through
+// Run, the probe's checkpoint would usually have removed the WAL first, and the guarantee must not
+// depend on that.
+func TestFailedJournalMoveMovesTheDatabaseBack(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "old", "tsumugi.db")
+	dst := filepath.Join(root, "new", "tsumugi.db")
+	write(t, src, "db")
+	write(t, src+"-wal", "wal")
+	write(t, src+"-journal", "journal")
+
+	injectRename(t, func(oldpath, newpath string) bool { return oldpath == src+"-journal" })
+	var out, errOut bytes.Buffer
+	m := newMigrator(Options{Out: &out, Err: &errOut}, false)
+	m.moveDatabase(xdg.Item{ID: xdg.Database, What: "the database", New: dst}, src)
+
+	if m.failures != 1 || !strings.Contains(errOut.String(), "moved back") {
+		t.Fatalf("failures = %d\nstdout:\n%s\nstderr:\n%s", m.failures, out.String(), errOut.String())
+	}
+	expectContent(t, src, "db")
+	expectContent(t, src+"-wal", "wal")
+	expectContent(t, src+"-journal", "journal")
+	for _, p := range []string{dst, dst + "-wal", dst + "-journal"} {
+		if _, err := os.Stat(p); err == nil {
+			t.Errorf("%s was left at the new location", p)
+		}
+	}
+	if m.dbTarget != "" {
+		t.Errorf("dbTarget = %q after a failed move", m.dbTarget)
+	}
+}
+
+// If moving back fails as well, the error must say where the files are and what to do.
+func TestFailedRollbackSaysWhatToMoveByHand(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "old", "tsumugi.db")
+	dst := filepath.Join(root, "new", "tsumugi.db")
+	write(t, src, "db")
+	write(t, src+"-journal", "journal")
+
+	injectRename(t, func(oldpath, newpath string) bool { return oldpath == src+"-journal" || oldpath == dst })
+	var errOut bytes.Buffer
+	m := newMigrator(Options{Err: &errOut}, false)
+	m.moveDatabase(xdg.Item{ID: xdg.Database, What: "the database", New: dst}, src)
+
+	if m.failures != 1 {
+		t.Fatalf("failures = %d\n%s", m.failures, errOut.String())
+	}
+	for _, want := range []string{"by hand", dst, src} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Errorf("error is missing %q:\n%s", want, errOut.String())
+		}
+	}
+}
+
+// injectRename makes rename fail, with an error that is not a cross-volume one, for the moves fail
+// picks; every other rename goes through.
+func injectRename(t *testing.T, fail func(oldpath, newpath string) bool) {
+	t.Helper()
+	rename = func(oldpath, newpath string) error {
+		if fail(oldpath, newpath) {
+			return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: errors.New("injected failure")}
+		}
+		return os.Rename(oldpath, newpath)
+	}
+	t.Cleanup(func() { rename = os.Rename })
 }
 
 type entry struct {
