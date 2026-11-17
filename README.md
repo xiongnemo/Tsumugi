@@ -348,8 +348,9 @@ $env:TSUMUGI_PASSPHRASE = 'choose-a-long-local-passphrase'
 ```
 
 Memory diagnostics are opt-in and write JSON lines to `tsumugi-debug-mem.jsonl`
-in the working directory, keeping the TUI stderr clean. Use the pprof address
-when you need heap/profile verification alongside the periodic counters:
+in the state directory (see [Files](#files)), keeping the TUI stderr clean. Use
+the pprof address when you need heap/profile verification alongside the
+periodic counters:
 
 ```pwsh
 $env:TSUMUGI_DEBUG_MEM = '1'       # periodic MemStats, viewport, cache, and gap-fill counts
@@ -371,11 +372,83 @@ go run ./cmd/tsumugi --login=user --api-id=123456 --api-hash=your_api_hash --pho
 go run ./cmd/tsumugi --login=bot --api-id=123456 --api-hash=your_api_hash --bot-token=123456:bot-token
 ```
 
-Use `--config-dir=<path>` to override where Tsumugi stores config-derived
-directories. Tsumugi does not read a config file yet.
+Use `--config-dir=<dir>` to keep every file under `<dir>/tsumugi` (database,
+sessions, media cache, logs) instead of the default locations in [Files](#files),
+for example for a throwaway or second account. Tsumugi does not read a config
+file yet.
 
 Bot mode is a bot console, not a full personal Telegram client. Telegram only
 sends chats and updates that the bot is allowed to receive.
+
+## Files
+
+Tsumugi keeps its files under your home directory in the
+[XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/latest/)
+layout, on Linux, macOS and Windows alike (`~` is `%USERPROFILE%` on Windows):
+
+| What | Where | Kind |
+|---|---|---|
+| Database, `tsumugi.db`: history, settings, proxy profiles, saved credentials, sealed with the keyring or passphrase key | `$XDG_DATA_HOME/tsumugi`, default `~/.local/share/tsumugi` | data |
+| Telegram sessions, `sessions/*.json` | `$XDG_DATA_HOME/tsumugi/sessions` | data |
+| Media cache, `media/`: downloaded previews and animations, pasted clipboard images | `$XDG_CACHE_HOME/tsumugi/media`, default `~/.cache/tsumugi/media` | cache |
+| Debug log `debug-tsumugi.log` (`TSUMUGI_DEBUG=1`) and memory diagnostics `tsumugi-debug-mem.jsonl` (`TSUMUGI_DEBUG_MEM=1`) | `$XDG_STATE_HOME/tsumugi`, default `~/.local/state/tsumugi` | state |
+
+`$XDG_CONFIG_HOME/tsumugi` (`~/.config/tsumugi`) is reserved: settings live in the
+database, so nothing is written there yet. The database and the sessions cannot be
+regenerated, so back them up rather than clearing them like a cache. The media
+cache can be deleted at any time.
+
+`XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME` and `XDG_CONFIG_HOME` are
+honored on every OS when they hold an absolute path; relative values are ignored,
+as the spec says. `TSUMUGI_DEBUG_LOG` still overrides the debug log's path, and
+`--config-dir=<dir>` puts every file under `<dir>/tsumugi` and looks nowhere else.
+Directories are created, mode 0700, when something is first written to them; the
+files Tsumugi writes are 0600.
+
+### Upgrading from an older release
+
+Releases before this layout kept the database, sessions and media cache in the OS
+cache directory (`%LOCALAPPDATA%\tsumugi` on Windows, `~/Library/Caches/tsumugi`
+on macOS, `~/.cache/tsumugi` on Linux), created an empty `%APPDATA%\tsumugi` or
+`~/Library/Application Support/tsumugi`, and wrote the debug logs to the working
+directory.
+
+Those keep working. Each item is looked up on its own: at the new location first,
+then at the old one, and if it is in neither, the new location is used. When
+something is found only at the old location, Tsumugi uses it and says so on stderr
+before the TUI starts:
+
+```text
+tsumugi: using the database from the old location C:\Users\you\AppData\Local\tsumugi\tsumugi.db; run "tsumugi migrate" to move it to C:\Users\you\.local\share\tsumugi\tsumugi.db
+```
+
+`tsumugi migrate` moves everything:
+
+```pwsh
+tsumugi migrate --dry-run         # print the plan, including what is skipped and why; change nothing
+tsumugi migrate                   # do it
+tsumugi migrate --from D:\work    # look for old debug logs there instead of the current directory
+```
+
+- Nothing is overwritten. When the same file is already at the new location, the
+  old copy is deleted; when the content differs, both are kept, the conflict is
+  reported, and migrate exits 1 after doing everything else. Tsumugi uses the copy
+  at the new location.
+- Moves are renames. Across volumes a file is copied with its mode and mtime,
+  verified by size and SHA-256, and only then removed.
+- Old directories left empty are removed: only Tsumugi's own, never
+  `%LOCALAPPDATA%` itself.
+- Absolute paths stored inside the database that point into a moved directory
+  (the cached file behind a media message, the attach picker's last directory)
+  are rewritten. That needs the database key; if it is in neither the OS keyring
+  nor `TSUMUGI_PASSPHRASE`, Tsumugi finishes the rewrite itself on its next start.
+  migrate never asks for the passphrase.
+- migrate refuses while Tsumugi is running: it asks SQLite for an exclusive lock
+  on the database, which a running Tsumugi holds open.
+- Run again once everything has moved, it prints `nothing to migrate`.
+
+On Linux the media cache was already in `~/.cache/tsumugi`, so only the database
+and the sessions move, to `~/.local/share/tsumugi`.
 
 ## Proxy
 
@@ -437,7 +510,7 @@ about it:
 The status bar can only show a truncated line, so failures are also written to a file:
 
 ```pwsh
-$env:TSUMUGI_DEBUG = '1'          # NDJSON to debug-tsumugi.log in the working directory
+$env:TSUMUGI_DEBUG = '1'          # NDJSON to debug-tsumugi.log in the state directory (see Files)
 $env:TSUMUGI_DEBUG_LOG = 'C:\tmp\tsumugi.log'   # optional, override the path
 ```
 

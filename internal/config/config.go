@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nemo/Tsumugi/internal/network"
+	"github.com/nemo/Tsumugi/internal/xdg"
 )
 
 type AuthMode string
@@ -48,13 +49,35 @@ type CLIFlags struct {
 	Proxy      string
 }
 
+// Paths is where this run reads and writes. See internal/xdg for the layout and the fallback to
+// the locations older releases used.
 type Paths struct {
-	ConfigDir  string
+	// ConfigDir is reserved: Tsumugi keeps its settings in the database and writes nothing here.
+	ConfigDir string
+	// DataDir holds the database.
 	DataDir    string
+	StateDir   string
 	CacheDir   string
 	SessionDir string
-	LogDir     string
 	MediaDir   string
+	DebugLog   string
+	MemoryLog  string
+	// Legacy lists the items in use this run that were found only at an old location, so that
+	// startup can say so once, before the TUI takes the screen.
+	Legacy []LegacyItem
+}
+
+// LegacyItem is an item read from an old location.
+type LegacyItem struct {
+	ID   string
+	What string
+	Old  string
+	New  string
+}
+
+// Notice is the one line printed to stderr for an item still at an old location.
+func (l LegacyItem) Notice() string {
+	return fmt.Sprintf("tsumugi: using %s from the old location %s; run \"tsumugi migrate\" to move it to %s", l.What, l.Old, l.New)
 }
 
 type SyncMode string
@@ -86,6 +109,7 @@ func Load(flags CLIFlags) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	paths = pathsInUse(paths, os.Getenv)
 	envAPIID, err := envInt("TSUMUGI_API_ID", "API_ID")
 	if err != nil {
 		return Config{}, err
@@ -197,14 +221,14 @@ func (c Config) WithoutTelegramAuth() Config {
 	return c
 }
 
+// EnsureDirs creates the directories written to at startup: the database's, which is opened
+// straight away, and the sessions', because gotd writes a session file without creating its parent.
+// Everything else is created when something is first written there, so a run never leaves empty
+// directories behind.
 func (c Config) EnsureDirs() error {
 	for _, dir := range []string{
-		c.Paths.ConfigDir,
 		c.Paths.DataDir,
-		c.Paths.CacheDir,
 		c.Paths.SessionDir,
-		c.Paths.LogDir,
-		c.Paths.MediaDir,
 	} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
@@ -223,36 +247,101 @@ func (c Config) SessionPath(identity string) string {
 
 // defaultPaths resolves where Tsumugi keeps its files.
 //
-// configPath overrides *both* roots. It used to redirect only the config directory while the
-// database, sessions and media cache stayed under os.UserCacheDir, which made the flag a trap:
-// running with --config-dir pointed at an empty directory still opened the real database, read the
-// real stored credentials, and connected as the real account. There is no use for a config
-// directory that is isolated from the data it describes.
+// configPath (--config-dir) puts *everything* under <configPath>/tsumugi and consults no other
+// location. It used to redirect only the config directory while the database, sessions and media
+// cache stayed under os.UserCacheDir, which made the flag a trap: running with --config-dir pointed
+// at an empty directory still opened the real database, read the real stored credentials, and
+// connected as the real account. There is no use for a config directory that is isolated from the
+// data it describes, so the override also wins over the XDG layout and over every legacy location.
 func defaultPaths(configPath string) (Paths, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return Paths{}, err
-	}
-	dataDir, err := os.UserCacheDir()
-	if err != nil {
-		return Paths{}, err
-	}
-
 	if configPath != "" {
-		configDir = configPath
-		dataDir = configPath
+		return overridePaths(configPath), nil
 	}
+	env, err := xdg.Current()
+	if err != nil {
+		return Paths{}, err
+	}
+	// The working directory is only where older releases wrote the debug logs by default; failing
+	// to read it just means not looking there.
+	cwd, _ := os.Getwd()
+	return resolvePaths(env, cwd), nil
+}
 
-	baseConfig := filepath.Join(configDir, "tsumugi")
-	baseData := filepath.Join(dataDir, "tsumugi")
+// overridePaths is the --config-dir layout, unchanged from before the XDG move apart from the state
+// directory, which holds the debug logs that used to default to the working directory.
+func overridePaths(configPath string) Paths {
+	root := filepath.Join(configPath, xdg.App)
+	state := filepath.Join(root, "state")
 	return Paths{
-		ConfigDir:  baseConfig,
-		DataDir:    baseData,
-		CacheDir:   filepath.Join(baseData, "cache"),
-		SessionDir: filepath.Join(baseData, "sessions"),
-		LogDir:     filepath.Join(baseData, "logs"),
-		MediaDir:   filepath.Join(baseData, "media"),
-	}, nil
+		ConfigDir:  root,
+		DataDir:    root,
+		StateDir:   state,
+		CacheDir:   filepath.Join(root, "cache"),
+		SessionDir: filepath.Join(root, "sessions"),
+		MediaDir:   filepath.Join(root, "media"),
+		DebugLog:   filepath.Join(state, xdg.DebugLogFile),
+		MemoryLog:  filepath.Join(state, xdg.MemoryLogFile),
+	}
+}
+
+// resolvePaths places each item on its own: an old database does not drag the sessions or the media
+// cache back to the old location with it, nor the other way round.
+func resolvePaths(env xdg.Env, cwd string) Paths {
+	layout := env.Layout()
+	p := Paths{ConfigDir: layout.Config, StateDir: layout.State, CacheDir: layout.Cache}
+	for _, item := range env.Items(cwd) {
+		r := item.Resolve()
+		switch item.ID {
+		case xdg.Database:
+			p.DataDir = filepath.Dir(r.Path)
+		case xdg.Sessions:
+			p.SessionDir = r.Path
+		case xdg.Media:
+			p.MediaDir = r.Path
+		case xdg.DebugLog:
+			p.DebugLog = r.Path
+		case xdg.MemoryLog:
+			p.MemoryLog = r.Path
+		}
+		if r.Legacy {
+			p.Legacy = append(p.Legacy, LegacyItem{ID: item.ID, What: item.What, Old: r.Path, New: item.New})
+		}
+	}
+	return p
+}
+
+// pathsInUse applies TSUMUGI_DEBUG_LOG, which still wins for the debug log, and keeps a legacy
+// notice only for what this run will touch: an old debug log is nobody's business while debug
+// logging is off.
+func pathsInUse(p Paths, getenv func(string) string) Paths {
+	debugOn := isTrue(getenv("TSUMUGI_DEBUG"))
+	debugOverride := strings.TrimSpace(getenv("TSUMUGI_DEBUG_LOG"))
+	if debugOverride != "" {
+		p.DebugLog = debugOverride
+	}
+	memOn := getenv("TSUMUGI_DEBUG_MEM") == "1"
+	var kept []LegacyItem
+	for _, item := range p.Legacy {
+		switch item.ID {
+		case xdg.DebugLog:
+			if !debugOn || debugOverride != "" {
+				continue
+			}
+		case xdg.MemoryLog:
+			if !memOn {
+				continue
+			}
+		}
+		kept = append(kept, item)
+	}
+	p.Legacy = kept
+	return p
+}
+
+// isTrue matches debuglog.Enabled's reading of TSUMUGI_DEBUG.
+func isTrue(value string) bool {
+	v := strings.TrimSpace(value)
+	return v == "1" || strings.EqualFold(v, "true")
 }
 
 func firstString(values ...string) string {

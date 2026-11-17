@@ -12,10 +12,12 @@ import (
 
 	"github.com/nemo/Tsumugi/internal/config"
 	"github.com/nemo/Tsumugi/internal/debuglog"
+	"github.com/nemo/Tsumugi/internal/migrate"
 	"github.com/nemo/Tsumugi/internal/secure"
 	"github.com/nemo/Tsumugi/internal/storage"
 	tgclient "github.com/nemo/Tsumugi/internal/telegram"
 	"github.com/nemo/Tsumugi/internal/ui"
+	"github.com/nemo/Tsumugi/internal/xdg"
 )
 
 type App struct {
@@ -62,6 +64,15 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	db.SetCipher(cipher)
 	debuglog.Log("startup", map[string]any{"step": "database_ready"})
+	// `tsumugi migrate` leaves this when it could not get the key to rewrite the paths inside sealed
+	// attachments. Still before the TUI, so stderr is safe.
+	dbPath := filepath.Join(a.cfg.Paths.DataDir, xdg.DatabaseFile)
+	if res, done, err := migrate.FinishPending(ctx, db, dbPath, a.cfg.Paths.StateDir); err != nil {
+		debuglog.Error("finish_migrate_rewrite", err, nil)
+		fmt.Fprintf(os.Stderr, "tsumugi: could not finish rewriting the paths tsumugi migrate moved: %v\n", err)
+	} else if done {
+		debuglog.Log("startup", map[string]any{"step": "finished_migrate_rewrite", "media": res.Media, "settings": res.Settings})
+	}
 	if err := db.UpsertEnvironmentProxy(ctx, a.cfg.Proxy); err != nil {
 		return err
 	}

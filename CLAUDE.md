@@ -31,9 +31,11 @@ the nearest exact semver tag's patch plus the commits since that tag. Passing
   needs it, never echo it into output, logs, or status text. Gitignored via `*.secret`.
 - `Tsumugi.exe` at the repo root and `dist/` — local build artifacts, gitignored.
 - `debug-*.log` — NDJSON diagnostics from `internal/debuglog`, gitignored. Turn it on with
-  `TSUMUGI_DEBUG=1` (override the path with `TSUMUGI_DEBUG_LOG`). Every error that reaches the
-  UI is written there in full, which is the only way to read one: the status bar has a single
-  truncated column.
+  `TSUMUGI_DEBUG=1`. It goes to `~/.local/state/tsumugi/debug-tsumugi.log` (`$XDG_STATE_HOME`),
+  or to an old `debug-tsumugi.log` still in the working directory until `tsumugi migrate` moves
+  it; set `TSUMUGI_DEBUG_LOG=./debug-tsumugi.log` to keep it in the repo. Every error that
+  reaches the UI is written there in full, which is the only way to read one: the status bar has
+  a single truncated column.
 
 Manual Telegram tests are env-gated: `TSUMUGI_MANUAL_SECRET=1` for read-only, and
 `TSUMUGI_MANUAL_SEND=1` additionally required before anything is sent.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -12,7 +13,9 @@ import (
 
 const (
 	memoryDiagnosticsInterval = 30 * time.Second
-	memoryDiagnosticsFile     = "tsumugi-debug-mem.jsonl"
+	// memoryDiagnosticsFallback is used only when the configuration names no file: the working
+	// directory, where releases before the XDG layout wrote it.
+	memoryDiagnosticsFallback = "tsumugi-debug-mem.jsonl"
 )
 
 func (a *App) runMemoryDiagnostics(ctx context.Context) {
@@ -56,10 +59,10 @@ func (a *App) logMemoryDiagnostics(ctx context.Context) {
 	}
 
 	cache := media.InlineAnimCacheStats()
-	appendMemoryDebugLog(ms, viewport, cache, gapFillQueued)
+	appendMemoryDebugLog(a.cfg.Paths.MemoryLog, ms, viewport, cache, gapFillQueued)
 }
 
-func appendMemoryDebugLog(ms runtime.MemStats, viewport MessageViewportStats, cache media.AnimCacheStats, gapFillQueued int) {
+func appendMemoryDebugLog(path string, ms runtime.MemStats, viewport MessageViewportStats, cache media.AnimCacheStats, gapFillQueued int) {
 	payload := map[string]any{
 		"message":   "memory diagnostics snapshot",
 		"timestamp": time.Now().UnixMilli(),
@@ -86,7 +89,12 @@ func appendMemoryDebugLog(ms runtime.MemStats, viewport MessageViewportStats, ca
 	if err != nil {
 		return
 	}
-	f, err := os.OpenFile(memoryDiagnosticsFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if path == "" {
+		path = memoryDiagnosticsFallback
+	} else {
+		_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return
 	}

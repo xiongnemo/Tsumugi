@@ -162,7 +162,7 @@ $env:TSUMUGI_PHONE = '+15551234567'
 $env:TSUMUGI_PASSPHRASE = 'choose-a-long-local-passphrase'
 ```
 
-内存诊断为可选功能，在工作目录写入 `tsumugi-debug-mem.jsonl`（JSON 行），不污染 TUI 的 stderr。需要堆/性能分析时可配合 pprof 地址：
+内存诊断为可选功能，在 state 目录写入 `tsumugi-debug-mem.jsonl`（JSON 行，见[文件位置](#文件位置)），不污染 TUI 的 stderr。需要堆/性能分析时可配合 pprof 地址：
 
 ```pwsh
 $env:TSUMUGI_DEBUG_MEM = '1'       # 周期性 MemStats、viewport、缓存与 gap-fill 计数
@@ -184,9 +184,51 @@ go run ./cmd/tsumugi --login=user --api-id=123456 --api-hash=your_api_hash --pho
 go run ./cmd/tsumugi --login=bot --api-id=123456 --api-hash=your_api_hash --bot-token=123456:bot-token
 ```
 
-使用 `--config-dir=<path>` 覆盖配置相关目录的存放位置。Tsumugi 目前不读取配置文件。
+使用 `--config-dir=<dir>` 把所有文件（数据库、会话、媒体缓存、日志）放到 `<dir>/tsumugi` 下，而不是[文件位置](#文件位置)中的默认位置，例如用于临时账号或第二个账号。Tsumugi 目前不读取配置文件。
 
 Bot 模式是 Bot 控制台，而非完整的个人 Telegram 客户端。Telegram 仅推送 Bot 有权接收的会话与更新。
+
+## 文件位置
+
+Tsumugi 的文件都放在用户主目录下，采用 [XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/latest/) 布局，Linux、macOS、Windows 一致（Windows 上 `~` 即 `%USERPROFILE%`）：
+
+| 内容 | 位置 | 类别 |
+|---|---|---|
+| 数据库 `tsumugi.db`：历史、设置、代理配置、已保存的凭证，用钥匙串或口令派生的密钥加密 | `$XDG_DATA_HOME/tsumugi`，默认 `~/.local/share/tsumugi` | data |
+| Telegram 会话 `sessions/*.json` | `$XDG_DATA_HOME/tsumugi/sessions` | data |
+| 媒体缓存 `media/`：下载的预览与动图、粘贴的剪贴板图片 | `$XDG_CACHE_HOME/tsumugi/media`，默认 `~/.cache/tsumugi/media` | cache |
+| 诊断日志 `debug-tsumugi.log`（`TSUMUGI_DEBUG=1`）与内存诊断 `tsumugi-debug-mem.jsonl`（`TSUMUGI_DEBUG_MEM=1`） | `$XDG_STATE_HOME/tsumugi`，默认 `~/.local/state/tsumugi` | state |
+
+`$XDG_CONFIG_HOME/tsumugi`（`~/.config/tsumugi`）为保留目录：设置保存在数据库中，目前不会写入任何文件。数据库与会话无法重新生成，请备份，不要像缓存一样清理；媒体缓存可随时删除。
+
+`XDG_DATA_HOME`、`XDG_STATE_HOME`、`XDG_CACHE_HOME`、`XDG_CONFIG_HOME` 在所有系统上都生效，但必须是绝对路径；按规范，相对路径会被忽略。`TSUMUGI_DEBUG_LOG` 仍可覆盖诊断日志路径；`--config-dir=<dir>` 会把所有文件放到 `<dir>/tsumugi` 下，且不再查找其他位置。目录在首次写入时创建，权限 0700；Tsumugi 写入的文件权限为 0600。
+
+### 从旧版本升级
+
+旧版本把数据库、会话与媒体缓存放在系统缓存目录（Windows 为 `%LOCALAPPDATA%\tsumugi`，macOS 为 `~/Library/Caches/tsumugi`，Linux 为 `~/.cache/tsumugi`），另外会创建一个空的 `%APPDATA%\tsumugi` 或 `~/Library/Application Support/tsumugi`，诊断日志则写在工作目录。
+
+这些位置仍然可用。每一项单独查找：先找新位置，再找旧位置，都没有则使用新位置。若某项只在旧位置存在，Tsumugi 会继续使用它，并在 TUI 启动前向 stderr 打印一行：
+
+```text
+tsumugi: using the database from the old location C:\Users\you\AppData\Local\tsumugi\tsumugi.db; run "tsumugi migrate" to move it to C:\Users\you\.local\share\tsumugi\tsumugi.db
+```
+
+`tsumugi migrate` 负责搬迁：
+
+```pwsh
+tsumugi migrate --dry-run         # 打印计划（含跳过项及原因），不做任何改动
+tsumugi migrate                   # 执行
+tsumugi migrate --from D:\work    # 在此处而非当前目录查找旧诊断日志
+```
+
+- 不会覆盖任何文件。新位置已有内容相同的文件时删除旧副本；内容不同时两份都保留并报告冲突，其余工作完成后以退出码 1 结束。Tsumugi 使用新位置的那份。
+- 搬迁使用重命名；跨卷时先复制（保留权限与修改时间），按大小与 SHA-256 校验后才删除源文件。
+- 搬空的旧目录会被删除：只删除 Tsumugi 自己的目录，绝不删除 `%LOCALAPPDATA%` 本身。
+- 数据库中指向已搬迁目录的绝对路径（媒体消息对应的缓存文件、附件选择器上次所在目录）会被改写。这需要数据库密钥；若系统钥匙串与 `TSUMUGI_PASSPHRASE` 中都没有，Tsumugi 会在下次启动时自行完成改写。migrate 从不询问口令。
+- Tsumugi 运行时 migrate 会拒绝执行：它向 SQLite 申请数据库的独占锁，而运行中的 Tsumugi 一直持有该数据库。
+- 全部搬完后再次运行会输出 `nothing to migrate`。
+
+Linux 上媒体缓存本来就在 `~/.cache/tsumugi`，因此只有数据库与会话会移动，搬到 `~/.local/share/tsumugi`。
 
 ## 代理
 
@@ -227,7 +269,7 @@ Tsumugi 的目标是能在裸的 Linux 文本模式控制台（`Ctrl+Alt+F3`，�
 状态栏只能显示被截断的一行，所以失败信息同时会写到文件里：
 
 ```pwsh
-$env:TSUMUGI_DEBUG = '1'          # NDJSON 写入工作目录下的 debug-tsumugi.log
+$env:TSUMUGI_DEBUG = '1'          # NDJSON 写入 state 目录下的 debug-tsumugi.log（见文件位置）
 $env:TSUMUGI_DEBUG_LOG = 'C:\tmp\tsumugi.log'   # 可选，覆盖路径
 ```
 

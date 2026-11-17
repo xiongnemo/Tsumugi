@@ -11,18 +11,30 @@ package debuglog
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
+// defaultLogName is the fallback when nothing called SetPath: the working directory, which is
+// where every release before the XDG layout wrote it.
 const defaultLogName = "debug-tsumugi.log"
 
 var (
-	mu      sync.Mutex
-	once    sync.Once
-	enabled bool
+	mu         sync.Mutex
+	once       sync.Once
+	enabled    bool
+	configured string
 )
+
+// SetPath sets where the log goes when TSUMUGI_DEBUG_LOG does not say: the state directory, or an
+// old log still in the working directory. Its directory is created on the first write.
+func SetPath(path string) {
+	mu.Lock()
+	defer mu.Unlock()
+	configured = path
+}
 
 // Enabled reports whether debug logging is active.
 //
@@ -36,11 +48,16 @@ func Enabled() bool {
 	return enabled
 }
 
-func logPath() string {
+// logPath reports where to write, and whether the directory is Tsumugi's to create. A
+// TSUMUGI_DEBUG_LOG path is taken as given.
+func logPath() (string, bool) {
 	if path := strings.TrimSpace(os.Getenv("TSUMUGI_DEBUG_LOG")); path != "" {
-		return path
+		return path, false
 	}
-	return defaultLogName
+	if configured != "" {
+		return configured, true
+	}
+	return defaultLogName, false
 }
 
 // Log appends one NDJSON record.
@@ -70,7 +87,11 @@ func Log(event string, fields map[string]any) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	f, err := os.OpenFile(logPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	path, ours := logPath()
+	if ours {
+		_ = os.MkdirAll(filepath.Dir(path), 0o700)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
