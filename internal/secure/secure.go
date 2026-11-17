@@ -42,16 +42,8 @@ func NewCipher(key []byte) (*Cipher, error) {
 }
 
 func ResolveMasterKey(salt []byte) ([]byte, string, error) {
-	if encoded, err := keyring.Get(keyringService, keyringUser); err == nil && encoded != "" {
-		key, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil {
-			return nil, "", fmt.Errorf("decode keyring key: %w", err)
-		}
-		return key, "keyring", nil
-	}
-
-	if passphrase := os.Getenv("TSUMUGI_PASSPHRASE"); passphrase != "" {
-		return DeriveKey(passphrase, salt), "passphrase", nil
+	if key, source, err := LookupMasterKey(salt); !errors.Is(err, ErrPassphraseRequired) {
+		return key, source, err
 	}
 
 	key := make([]byte, 32)
@@ -62,6 +54,24 @@ func ResolveMasterKey(salt []byte) ([]byte, string, error) {
 		return key, "keyring", nil
 	}
 
+	return nil, "", ErrPassphraseRequired
+}
+
+// LookupMasterKey finds the key the way ResolveMasterKey does - the OS keyring, then
+// TSUMUGI_PASSPHRASE - but never creates one, and returns ErrPassphraseRequired when neither has it.
+// For code that works on an existing database, such as `tsumugi migrate`, where a fresh key would
+// open nothing.
+func LookupMasterKey(salt []byte) ([]byte, string, error) {
+	if encoded, err := keyring.Get(keyringService, keyringUser); err == nil && encoded != "" {
+		key, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, "", fmt.Errorf("decode keyring key: %w", err)
+		}
+		return key, "keyring", nil
+	}
+	if passphrase := os.Getenv("TSUMUGI_PASSPHRASE"); passphrase != "" {
+		return DeriveKey(passphrase, salt), "passphrase", nil
+	}
 	return nil, "", ErrPassphraseRequired
 }
 
