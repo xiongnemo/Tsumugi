@@ -147,6 +147,7 @@ jobs:
           COMMIT: ${{ steps.meta.outputs.commit }}
           BRANCH: ${{ steps.meta.outputs.branch }}
           RELEASE: ${{ steps.meta.outputs.release }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
           set -euo pipefail
           mkdir -p dist out
@@ -173,6 +174,42 @@ jobs:
             "openbsd/amd64"
             "openbsd/arm64"
           )
+
+          # The version on the Windows exe's Details tab: a VERSIONINFO resource
+          # and nothing else -- a manifest or an icon would change how Windows
+          # runs or shows it. go build links cmd/tsumugi/rsrc_windows_<arch>.syso
+          # into that arch's exe only; every other target ignores the files. The
+          # numeric version is the base version; the strings are the version as
+          # published, and Prerelease is set when it is published as a prerelease.
+          # 2026 is the year of the first commit.
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            VERSION_FLAGS="Prerelease"
+          else
+            VERSION_FLAGS=""
+          fi
+          jq -n \
+            --arg numeric "${BASE_TAG#v}.0" \
+            --arg flags "${VERSION_FLAGS}" \
+            --arg version "${RELEASE_VERSION}" \
+            '{RT_VERSION: {"#1": {"0000": {
+              fixed: {file_version: $numeric, product_version: $numeric, flags: $flags},
+              info: {"0409": {
+                CompanyName: "Nemo Xiong",
+                FileDescription: "Telegram TUI client, usable on a raw Linux console.",
+                FileVersion: $version,
+                InternalName: "tsumugi",
+                LegalCopyright: "Copyright © 2026 Nemo Xiong",
+                OriginalFilename: "tsumugi.exe",
+                ProductName: "Tsumugi",
+                ProductVersion: $version
+              }}
+            }}}}' > dist/winres.json
+          windows_arches="$(printf '%s\n' "${targets[@]}" | sed -n 's|^windows/||p' | paste -sd, -)"
+          if [[ -n "${windows_arches}" ]]; then
+            go run github.com/tc-hib/go-winres@v0.3.3 make \
+              --in dist/winres.json --arch "${windows_arches}" --out cmd/tsumugi/rsrc
+            ls cmd/tsumugi/rsrc_windows_*.syso
+          fi
 
           for target in "${targets[@]}"; do
             IFS=/ read -r goos goarch <<< "${target}"
